@@ -33,6 +33,11 @@ Options (environment variables): `PORT`, `HOST` (default `127.0.0.1`), `COMMUNIS
   same avatar used on two accounts is linked even if it was resized or re-encoded.
 - **Extract from text** – paste a report, log or e-mail; addresses, URLs, social profiles, IPs, domains,
   phone numbers and CVE ids are pulled out.
+- **Readable results** – the default *Organised* layout sorts each hub's neighbours by type and puts a
+  person's e-mail, phone, portrait and profiles directly behind that person. Roles and other key facts are
+  shown under the names (toggle in the sidebar). With nothing selected, the right panel is a sorted
+  overview: every person with role and contact details and an *Investigate* button, then all other
+  entities by type. A misclassified entity can be corrected with *Wrong type?*.
 - **Analysis** – select two nodes and *Show how they connect* traces the shortest path; search and type
   filters; several layouts; notes per entity; "look up elsewhere" links (Shodan, VirusTotal, reverse image
   search, …).

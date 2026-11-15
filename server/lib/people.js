@@ -9,7 +9,43 @@ const STOP = new Set(('about contact contacts our us team teams privacy policy t
   'people members member advisory executive general information social follow street road avenue suite floor building city united states kingdom ' +
   'monday tuesday wednesday thursday friday saturday sunday january february march april may june july august september october november december ' +
   'frequently asked questions related posts recent articles featured stories site map data protection web design digital marketing customer success ' +
-  'human resources public relations click here find out').split(' '));
+  'human resources public relations click here find out ' +
+  // German, French, Spanish, Italian and Dutch page vocabulary
+  'unser unsere unserem unseren unserer ihr ihre ihren der die das dem den ein eine einen wir sie uns über uber mehr alle neue neues neuer aktuelles ' +
+  'ziele ziel werte leitbild geschichte standort standorte kontakt impressum datenschutz karriere produkte produkt leistungen leistung lösungen ' +
+  'unternehmen firma willkommen erfahren weiterlesen startseite anfahrt öffnungszeiten ansprechpartner geschäftsführung geschäftsleitung vorstand ' +
+  'aufsichtsrat mitarbeiter kunden partner presse medien nachrichten veranstaltungen termine downloads qualität nachhaltigkeit verantwortung ' +
+  'zukunft innovation forschung entwicklung herstellung vertrieb logistik einkauf verkauf buchhaltung personal verwaltung zentrale zum zur vom im ' +
+  'notre nos votre vos le les une des du nous vous qui sommes équipe equipe propos accueil actualités contactez mentions légales politique société ' +
+  'el los las nuestro nuestra nuestros nuestras quienes somos sobre inicio noticias contacto aviso empresa equipo servicios productos ' +
+  'il lo gli nostro nostra nostri chi siamo azienda contatti notizie servizi prodotti squadra ' +
+  'ons onze over wij het een nieuws diensten producten bedrijf').split(' ').filter(Boolean));
+const COMPANY = /^(gmbh|ag|kg|ohg|ug|inc|ltd|llc|llp|plc|corp|corporation|company|co|group|gruppe|holding|holdings|pharma|pharmaceuticals|labs|laboratories|solutions|systems|technologies|technology|software|consulting|partners|associates|industries|international|global|bank|capital|ventures|media|studio|studios|services|foundation|institute|university|sa|sas|sarl|srl|spa|bv|nv|ab|oy|as|aps|kft|sro)$/i;
+const FIRST_NAMES = new Set(('aaron abdul abigail adam adrian adriana agnes ahmed aisha alan albert alberto alejandro alessandro alex alexander alexandra alexis alfred ali alice alicia alina ' +
+  'alison amanda amber amelia amir amy ana anastasia andre andrea andreas andrew andrzej angela angelika anita ann anna anne annette anthony anton antonia antonio ' +
+  'ariane arthur ashley astrid barbara bastian beate beatrice ben benedikt benjamin bernard bernd bernhard bettina bianca bill birgit bob boris brandon brenda brian ' +
+  'brigitte bruno camille carina carl carla carlos carmen carol carolina caroline catherine cedric charles charlotte chiara chloe chris christa christian christiane ' +
+  'christina christine christoph christopher clara claire claudia claus clemens colin connor cornelia craig cristina cynthia daniel daniela danielle david deborah ' +
+  'denis denise dennis diana diane diego dieter dirk dominik donald donna doris dorothea douglas edith eduardo edward elena elias elisabeth elizabeth elke ellen emil ' +
+  'emily emma emanuel eric erik erika ernst erwin esther eva evelyn fabian felix ferdinand fernando florian frances francesca francesco francis francisco frank franz ' +
+  'frederic friedrich gabriel gabriela gabriele gary georg george gerald gerhard gerda gert gisela giulia giuseppe gloria gordon grace greg gregor gregory gudrun ' +
+  'guido gunter günter günther gustav hannah hannes hans harald harry heather heidi heike heinrich heinz helen helena helene helga helmut henry herbert hermann hugo ' +
+  'ian ines ingrid irene iris isabel isabella isabelle ivan jack jacob jacqueline jakob james jan jana jane janet janine jasmin jason javier jean jeff jeffrey jennifer ' +
+  'jens jeremy jessica jim joachim joan joanna joe johann johanna johannes john jon jonas jonathan jorge jose josef joseph joshua juan judith julia julian juliane ' +
+  'julie jürgen justin jutta karen karin karl karolina katarina katharina katherine kathrin katja katrin kelly ken kenneth kerstin kevin kim klaus konrad kristin ' +
+  'kurt lars laura lauren laurent lea lena leo leon leonie lisa lorenz louis louise luca lucas lucia lucy ludwig luis luisa lukas lydia magdalena manfred manuel ' +
+  'manuela marc marcel marco marcus margaret margit maria marie marina mario marion mark markus marlene martha martin martina mary mathias matt matthew matthias ' +
+  'max maximilian melanie melissa michael michaela michel michele michelle miguel mike mohamed mohammed monica monika moritz nadine nancy natalia natalie nathan ' +
+  'nicholas nick nicolas nicole nikolaus nina noah norbert oliver olivia olga oscar oskar otto pablo pamela patricia patrick paul paula pedro peter petra philip ' +
+  'philipp philippe pia pierre rachel rafael rainer ralf ralph ramona raphael rebecca regina reinhard renate rene richard rita robert roberto robin roger roland ' +
+  'rolf roman ronald rosa rudolf ruth ryan sabine sabrina samantha samuel sandra sara sarah sascha scott sean sebastian sergio sharon silke silvia simon simone ' +
+  'sofia sonja sophia sophie stefan stefanie steffen stephan stephanie stephen steve steven susan susanne sven svenja sylvia tanja teresa theresa thomas thorsten ' +
+  'tim timo timothy tina tobias tom tomas tony ulrich ulrike ursula uwe valentina valerie vanessa vera verena veronika victor victoria viktor vincent volker walter ' +
+  'werner wilhelm william wolfgang xavier yvonne zoe raj priya arjun rahul amit anil sunita wei li ming chen hiroshi yuki kenji akira fatima omar hassan yusuf ' +
+  'ibrahim mustafa mehmet ayse elif emre olga dmitri sergei natasha tatiana igor pavel jan piotr krzysztof agnieszka katarzyna tomasz marek ewa maría josé jesús ' +
+  'joão andré zoltán istván lászló gábor éva').split(' '));
+/** Is the first word a given name we recognise? Used only as supporting evidence, never to reject. */
+export const knownFirstName = (name) => FIRST_NAMES.has(String(name).trim().split(/\s+/)[0].toLowerCase());
 const PARTICLE = /^(de|del|della|di|da|dos|van|von|der|den|la|le|du|bin|ibn|al|el|ter|ten|zu|y)$/i;
 const TITLE = /^(dr|prof|professor|mr|mrs|ms|miss|mx|sir|dame|ing|dipl|mag|rev|hon|herr|frau|mme|m|sr|sra)\.?$/i;
 const ROLE = /\b(ceo|cto|cfo|coo|cmo|cio|ciso|chief|founder|co-?founder|director|manager|head of|president|vice|vp|partner|principal|engineer|developer|designer|architect|professor|lecturer|researcher|scientist|attorney|lawyer|counsel|doctor|physician|nurse|officer|lead|consultant|analyst|editor|journalist|reporter|writer|owner|chair|chairman|chairwoman|secretary|treasurer|advisor|adviser|associate|assistant|specialist|coordinator|administrator|executive|accountant|recruiter|sales|marketing|geschäftsführer|geschäftsführerin|leiter|leiterin|inhaber|inhaberin|vorstand|directeur|directrice|gérant|responsable|gerente|direttore)\b/i;
@@ -33,7 +69,7 @@ export function personName(raw) {
     if (PARTICLE.test(t)) continue;
     if (/^\p{Lu}\.$/u.test(t)) continue; // middle initial
     if (!/^\p{Lu}[\p{Ll}'’-]+(\p{Lu}[\p{Ll}]+)?$/u.test(t)) return '';
-    if (STOP.has(t.toLowerCase())) return '';
+    if (STOP.has(t.toLowerCase()) || COMPANY.test(t) || t.length > 16) return '';
     real++;
   }
   return real >= 2 ? tokens.join(' ') : '';
@@ -124,14 +160,19 @@ export function extractPeople(html, pageUrl) {
     const before = body.slice(Math.max(prev ? prev.end : 0, c.start - 700), c.start);
     const contacts = contactsIn(seg, pageUrl);
     const pieces = seg.slice(0, 600).replace(/<[^>]+>/g, '\n').split('\n').map((t) => decode(t).replace(/\s+/g, ' ').trim()).filter(Boolean);
-    const role = pieces.slice(0, 4).find((t) => t.length >= 3 && t.length <= 70 && ROLE.test(t)) || '';
+    const role = pieces.slice(0, 3).find((t) => t.length >= 3 && t.length <= 60 && ROLE.test(t)) || '';
     const beforeImgs = [...before.matchAll(/<img\b[^>]*>/gi)];
     const imgBefore = beforeImgs.length ? imageIn(beforeImgs[beforeImgs.length - 1][0], pageUrl) : null;
     // cards put the portrait either above or below the name; the first card tells which
     if (i === 0) portraitFirst = !!imgBefore;
     const image = portraitFirst ? imgBefore : imageIn(seg.slice(0, 500), pageUrl);
-    const corroborated = !!role || contacts.emails.length || contacts.phones.length || contacts.profiles.length || (c.hinted && onPeoplePage);
-    if (!corroborated && !(onPeoplePage && (c.heading || c.hinted))) return;
+    // Evidence that this heading is a person and not a section title: a recognisable given name or a "name"
+    // class, a job title right below it, or an address that spells the name.
+    const nameish = c.hinted || knownFirstName(c.name);
+    const ownEmail = contacts.emails.some((e) => emailNameMatch(e, c.name));
+    const hasContact = contacts.emails.length || contacts.phones.length || contacts.profiles.length;
+    const corroborated = ownEmail || (nameish && (!!role || hasContact || onPeoplePage));
+    if (!corroborated && !(role && (hasContact || onPeoplePage)) && !(nameish && c.heading)) return;
     // a lone e-mail far from the name is more likely the site's general address than this person's
     if (!role && !c.hinted && contacts.emails.length > 2) contacts.emails = [];
     put(c.name, { ...contacts, role, image: role || c.hinted || onPeoplePage ? image : null, sure: corroborated });

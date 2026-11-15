@@ -50,8 +50,8 @@ const cy = cytoscape({
       'background-width': '54%', 'background-height': '54%',
       shape: (n) => (n.data('type') === 'photo' ? 'round-rectangle' : 'ellipse'),
       width: 'data(size)', height: 'data(size)',
-      label: 'data(display)', color: '#c9d3df', 'font-size': 12, 'text-valign': 'bottom', 'text-margin-y': 5,
-      'text-wrap': 'ellipsis', 'text-max-width': 150, 'text-outline-color': BG, 'text-outline-width': 2, 'min-zoomed-font-size': 6,
+      label: 'data(text)', color: '#c9d3df', 'font-size': 12, 'text-valign': 'bottom', 'text-margin-y': 5,
+      'text-wrap': 'wrap', 'text-max-width': 420, 'line-height': 1.25, 'text-outline-color': BG, 'text-outline-width': 2, 'min-zoomed-font-size': 6,
       'border-width': 0, 'overlay-opacity': 0,
     } },
     { selector: 'node.guess', style: { opacity: 0.6, 'border-width': 2, 'border-style': 'dashed', 'border-color': '#ffffff' } },
@@ -103,7 +103,7 @@ function upsert(ent, near, source) {
   const p = near || (bb ? { x: bb.x2 + 140, y: bb.y1 + bb.h / 2 + (Math.random() - 0.5) * Math.max(bb.h, 200) } : { x: 0, y: 0 });
   const n = cy.add({
     group: 'nodes',
-    data: { id: key, type: ent.type, value, label: ent.label || '', display: displayOf(ent.type, value, ent.label), props: { ...ent.props }, sources: source ? [source] : [], notes: ent.notes || '', size: 32 },
+    data: { id: key, type: ent.type, value, label: ent.label || '', display: displayOf(ent.type, value, ent.label), text: '', seq: ++seq, props: { ...ent.props }, sources: source ? [source] : [], notes: ent.notes || '', size: 32 },
     position: ent.x != null ? { x: ent.x, y: ent.y } : { x: p.x + (Math.random() - 0.5) * 120, y: p.y + (Math.random() - 0.5) * 120 },
   });
   if (ent.props?.confidence) n.addClass('guess');
@@ -117,6 +117,26 @@ function addEdge(a, b, label, module) {
   if (cy.getElementById(id).length || cy.getElementById(`${b}→${a}→${label}`).length) return false;
   cy.add({ group: 'edges', data: { id, source: a, target: b, label, module } });
   return true;
+}
+
+let seq = 0;
+
+/** Second line under a node's name: the most telling fact we know about it. */
+function subLabel(d) {
+  const p = d.props;
+  const t = { person: p.role || p.job_title || p.occupation || p.description, profile: p.display_name || p.title, domain: p.title, url: p.title,
+    ip: [p.isp, p.country].filter(Boolean).join(', '), asn: p.holder, netblock: p.name, photo: p.taken, location: p.precision && p.lat != null ? '' : p.place_type }[d.type];
+  const s = String(t || '').replace(/\s+/g, ' ').trim();
+  return s.length > 40 ? `${s.slice(0, 39)}…` : s;
+}
+function refreshTexts() {
+  const show = $('#show-sub').checked;
+  cy.batch(() => cy.nodes().forEach((n) => {
+    const d = n.data();
+    const base = d.display.length > 30 ? `${d.display.slice(0, 29)}…` : d.display;
+    const sub = show ? subLabel(d) : '';
+    n.data('text', sub ? `${base}\n${sub}` : base);
+  }));
 }
 
 function refreshSizes() {
@@ -166,8 +186,10 @@ function merge(inputKey, moduleId, result) {
 function afterChange(added = []) {
   linkMatchingPhotos();
   refreshSizes();
+  refreshTexts();
   renderLegend();
   if (added.length) scheduleLayout(added);
+  if (!selected().length) renderDetails(); // keep the overview list current
   scheduleSave();
   $('#empty').hidden = cy.nodes().length > 0;
 }
@@ -181,12 +203,85 @@ function scheduleLayout(keys) {
   layoutTimer = setTimeout(() => { const fresh = pendingNew; pendingNew = new Set(); runLayout(fresh); }, 200);
 }
 
+const TYPE_ORDER = Object.keys(TYPES);
+const DETAIL_TYPES = new Set(['email', 'phone', 'photo', 'profile', 'username']);
+
+/**
+ * "Organised" layout: each connected group becomes a wheel around its first entity. Neighbours are sorted
+ * by type and name, and whatever belongs to an entity (a person's e-mail, phone, portrait...) sits
+ * directly behind it, further out on the same spoke.
+ */
+function organisedPositions() {
+  const nodes = cy.nodes().not('.hidden').sort((a, b) => a.data('seq') - b.data('seq'));
+  const order = (a, b) => TYPE_ORDER.indexOf(a.data('type')) - TYPE_ORDER.indexOf(b.data('type'))
+    || (a.data('props').confidence ? 1 : 0) - (b.data('props').confidence ? 1 : 0) || a.data('display').localeCompare(b.data('display'));
+  const pos = {};
+  const seen = new Set();
+  let cursorX = 0;
+  nodes.forEach((root) => {
+    if (seen.has(root.id())) return;
+    const parent = new Map([[root.id(), null]]);
+    const kids = new Map();
+    const queue = [root];
+    seen.add(root.id());
+    for (let i = 0; i < queue.length; i++) {
+      const n = queue[i];
+      kids.set(n.id(), []);
+      n.neighborhood('node').not('.hidden').sort(order).forEach((k) => {
+        if (seen.has(k.id())) return;
+        seen.add(k.id()); parent.set(k.id(), n); kids.get(n.id()).push(k); queue.push(k);
+      });
+    }
+    // a contact detail that is linked to both the hub and a person belongs next to the person
+    for (const n of queue) {
+      const par = parent.get(n.id());
+      if (!par || kids.get(n.id()).length || !DETAIL_TYPES.has(n.data('type')) || par.data('type') === 'person') continue;
+      const owner = n.neighborhood('node[type = "person"]').not('.hidden').filter((x) => parent.has(x.id()) && x.id() !== par.id())[0];
+      if (!owner) continue;
+      kids.set(par.id(), kids.get(par.id()).filter((x) => x.id() !== n.id()));
+      kids.get(owner.id()).push(n);
+      kids.get(owner.id()).sort(order);
+      parent.set(n.id(), owner);
+    }
+    const leaves = new Map();
+    const count = (n) => { const c = kids.get(n.id()); const v = c.length ? c.reduce((t, k) => t + count(k), 0) : 1; leaves.set(n.id(), v); return v; };
+    count(root);
+    const place = (n, depth, a0, a1) => {
+      pos[n.id()] = { angle: (a0 + a1) / 2, depth };
+      let at = a0;
+      for (const k of kids.get(n.id())) { const span = ((a1 - a0) * leaves.get(k.id())) / leaves.get(n.id()); place(k, depth + 1, at, at + span); at += span; }
+    };
+    place(root, 0, -Math.PI / 2, Math.PI * 1.5);
+    // each ring is only as wide as its most crowded stretch needs
+    const rings = [];
+    queue.forEach((n) => { (rings[pos[n.id()].depth] ||= []).push(pos[n.id()].angle); });
+    const radius = [0];
+    for (let d = 1; d < rings.length; d++) {
+      const a = rings[d].sort((x, y) => x - y);
+      let gap = a.length > 1 ? 2 * Math.PI - (a[a.length - 1] - a[0]) : 2 * Math.PI;
+      for (let i = 1; i < a.length; i++) gap = Math.min(gap, a[i] - a[i - 1]);
+      radius[d] = Math.max(radius[d - 1] + (d === 1 ? 200 : 160), 105 / gap);
+    }
+    queue.forEach((n) => { const q = pos[n.id()]; q.x = Math.cos(q.angle) * radius[q.depth]; q.y = Math.sin(q.angle) * radius[q.depth]; });
+    const reach = Math.max(...queue.map((n) => Math.hypot(pos[n.id()].x, pos[n.id()].y))) + 110;
+    cursorX += reach;
+    queue.forEach((n) => { pos[n.id()].x += cursorX; });
+    cursorX += reach + 60;
+  });
+  return pos;
+}
+
 /** Without arguments re-arranges everything; with a set of new keys keeps existing nodes where they are. */
 function runLayout(fresh) {
   const visible = cy.elements().not('.hidden');
   if (visible.nodes().length < 2) { if (visible.nodes().length) cy.animate({ center: { eles: visible }, zoom: 1 }, { duration: 200 }); return; }
   const name = $('#layout-select').value;
   const anim = { animate: true, animationDuration: 450 };
+  if (name === 'radial') {
+    const pos = organisedPositions();
+    visible.layout({ name: 'preset', positions: (n) => pos[n.id()], fit: true, padding: 70, ...anim }).run();
+    return;
+  }
   if (name !== 'fcose') {
     const extra = { concentric: { concentric: (n) => n.degree(false), levelWidth: () => 2, minNodeSpacing: 40 }, breadthfirst: { spacingFactor: 1.1, directed: false }, circle: {}, grid: { avoidOverlapPadding: 30 } }[name];
     visible.layout({ name, fit: true, padding: 50, ...anim, ...extra }).run();
@@ -291,7 +386,7 @@ async function discover(rootKey, depth = 2) {
 const templatesFor = (type) => TEMPLATES.filter((t) => t.inputs.includes(type));
 
 /** Runs a template's steps in order; each step works on what the earlier steps found. */
-async function runTemplate(tpl, rootKey) {
+async function runTemplate(tpl, rootKey, { quiet = false } = {}) {
   const root = node(rootKey);
   if (!root.length) return;
   const scope = new Set([rootKey]);
@@ -318,7 +413,8 @@ async function runTemplate(tpl, rootKey) {
     (await Promise.all(jobs)).flat().forEach((k) => scope.add(k));
   }
   const people = [...scope].filter((k) => node(k).length && node(k).data('type') === 'person' && k !== rootKey).length;
-  log(`Template “${tpl.name}” finished: ${scope.size - 1} new entities${people ? `, ${people} of them people. Select a person and run “Investigate a person” to go deeper` : ''}.`, 'step');
+  log(`Template “${tpl.name}” finished: ${scope.size - 1} new entities${people ? `, ${people} of them people. They are listed on the right, each with an Investigate button` : ''}.`, 'step');
+  if (!quiet && people) cy.elements().unselect(); // back to the overview, which lists the people and the next step for each
   // let the last layout pass settle before framing the result
   setTimeout(() => cy.animate({ fit: { eles: cy.elements().not('.hidden'), padding: 60 } }, { duration: 300 }), 900);
 }
@@ -389,14 +485,16 @@ function renderDetails() {
   box.replaceChildren();
 
   if (sel.length === 0) {
-    box.append(h('div', { class: 'd-empty' },
-      h('h3', {}, 'Nothing selected'),
-      h('p', {}, 'Click a node to see what is known about it and which searches can be run on it.'),
+    if (cy.nodes().length) renderOverview(box);
+    else box.append(h('div', { class: 'd-empty' },
+      h('h3', {}, 'Nothing here yet'),
+      h('p', {}, 'Add a first entity or start from a template. What is found is listed here, sorted, with the next step for each item.'),
       h('ul', {},
-        h('li', {}, 'Right-click a node for a quick menu.'),
+        h('li', {}, 'Click a node to see what is known about it; right-click for a quick menu.'),
         h('li', {}, h('kbd', {}, 'Shift'), ' + click or drag selects several nodes; with two selected you can trace how they are connected.'),
         h('li', {}, h('kbd', {}, 'Delete'), ' removes the selection, ', h('kbd', {}, '/'), ' jumps to the add box.'),
         h('li', {}, 'Dashed, see-through nodes are guesses or unverified candidates.'))));
+    box.scrollTop = scroll;
     return;
   }
 
@@ -423,16 +521,13 @@ function renderDetails() {
   if (d.type === 'photo') box.append(h('img', { class: 'd-photo', src: imgUrl(d.value), alt: 'Photo preview', loading: 'lazy' }));
 
   const mods = modulesFor(d.type);
+  const tpls = templatesFor(d.type);
   box.append(h('div', { class: 'd-actions' },
-    h('button', { class: 'primary', disabled: !mods.length, onclick: () => runAll(key), title: 'Run every automatic search below' }, 'Run all searches'),
+    tpls.map((t, i) => h('button', { class: `wide-btn${i === 0 ? ' primary' : ''}`, title: t.description, onclick: () => runTemplate(t, key) },
+      t.action, h('small', {}, t.steps.map((st) => st.label.toLowerCase()).join(' → ')))),
+    h('button', { class: tpls.length ? '' : 'primary', disabled: !mods.length, onclick: () => runAll(key), title: 'Run every automatic search listed below, once' }, 'Run all searches'),
     h('button', { disabled: !mods.length, onclick: () => discover(key, 2), title: 'Run all searches here, then again on everything they find' }, 'Discover 2 levels'),
     h('button', { class: 'danger', onclick: () => removeNodes(n) }, 'Delete')));
-
-  const tpls = templatesFor(d.type);
-  if (tpls.length) {
-    box.append(h('h2', {}, 'Templates'), h('div', { class: 'tpl-btns' },
-      tpls.map((t) => h('button', { onclick: () => runTemplate(t, key) }, t.name, h('small', {}, `${t.description.split('. ')[0].replace(/\.$/, '')}.`)))));
-  }
 
   const props = Object.entries(d.props).filter(([k, v]) => k !== 'confidence' && v != null && v !== '');
   if (props.length) {
@@ -472,8 +567,60 @@ function renderDetails() {
   }
   if (d.sources.length) box.append(h('h2', {}, 'Found by'), h('div', { class: 'muted' }, d.sources.map((s) => modById(s)?.name || (s === 'manual' ? 'Added by hand' : s === 'text' ? 'Text extraction' : s)).join(', ')));
 
+  box.append(h('label', { class: 'retype' }, 'Wrong type?',
+    h('select', { onchange: (e) => retype(n, e.target.value) }, Object.entries(TYPES).map(([k, t]) => h('option', { value: k, selected: k === d.type }, t.label)))));
+
   box.scrollTop = scroll;
   if (focusedNotes) { const t = $('#notes'); t.focus(); t.setSelectionRange(caret, caret); }
+}
+
+/** Nothing selected: everything found so far as a sorted list, people first, each with its next step. */
+function renderOverview(box) {
+  const byName = (a, b) => (a.data('props').confidence ? 1 : 0) - (b.data('props').confidence ? 1 : 0) || a.data('display').localeCompare(b.data('display'));
+  const people = cy.nodes('[type = "person"]').not('.hidden').sort(byName);
+  const personTpl = TEMPLATES.find((t) => t.id === 'person');
+  box.append(h('div', { class: 'd-head' }, h('div', {}, h('div', { class: 'd-value' }, 'Overview'), h('div', { class: 'd-label' }, 'Everything found so far. Click a name to open it.'))));
+  if (people.length) {
+    const sure = people.filter((n) => !n.data('props').confidence);
+    box.append(h('h2', {}, `People (${people.length})`));
+    if (sure.length > 1) box.append(h('div', { class: 'd-actions', style: 'margin:0 0 8px' },
+      h('button', { title: 'Runs “Investigate a person” on each confirmed person, one after the other', onclick: async () => { for (const n of sure.toArray()) await runTemplate(personTpl, n.id(), { quiet: true }); } }, `Investigate all ${sure.length} confirmed people`)));
+    people.forEach((n) => {
+      const d = n.data();
+      const near = (type) => n.neighborhood(`node[type = "${type}"]`).map((x) => x.data('value'));
+      const facts = [...near('email'), ...near('phone'), ...n.neighborhood('node[type = "profile"]').map((x) => x.data('display'))];
+      box.append(h('div', { class: `ov-person${d.props.confidence ? ' cand' : ''}` }, chip('person'),
+        h('button', { class: 'ov-name', title: 'Open', onclick: () => focusNode(n) }, d.display, subLabel(d) ? h('span', { class: 'ov-role' }, subLabel(d)) : null, d.props.confidence ? h('span', { class: 'badge' }, 'unverified') : null),
+        h('div', { class: 'ov-facts' }, facts.length ? facts.join(' · ') : 'no contact details found'),
+        h('button', { title: personTpl.description, onclick: () => { focusNode(n); runTemplate(personTpl, n.id()); } }, 'Investigate')));
+    });
+  }
+  for (const type of TYPE_ORDER.filter((t) => t !== 'person')) {
+    const list = cy.nodes(`[type = "${type}"]`).not('.hidden').sort(byName);
+    if (!list.length) continue;
+    box.append(h('details', { class: 'ov-group', open: list.length <= 6 && ['email', 'phone', 'profile', 'organization'].includes(type) },
+      h('summary', {}, chip(type), TYPES[type].label, h('span', { class: 'n' }, list.length)),
+      list.map((n) => connRow(n, subLabel(n.data()) || n.neighborhood('node[type = "person"]').map((x) => x.data('display')).join(', ')))));
+  }
+}
+
+/** Correct a misclassified entity (e.g. a company the crawler took for a person) without losing its links. */
+function retype(n, type) {
+  const d = n.data();
+  const key = keyOf(type, d.value);
+  if (!key) { log(`"${d.value}" cannot be a ${TYPES[type].label.toLowerCase()}.`, 'err'); return renderDetails(); }
+  if (key === n.id()) return;
+  if (node(key).length) { log(`${d.display} already exists as a ${TYPES[type].label.toLowerCase()}.`, 'note'); return renderDetails(); }
+  const edges = n.connectedEdges().map((e) => ({ ...e.data() }));
+  const { confidence, role, ...props } = d.props;
+  upsert({ type, value: d.value, label: d.label, props, notes: d.notes, x: n.position('x'), y: n.position('y') }, null, d.sources[0]);
+  node(key).data('sources', d.sources);
+  cy.remove(n);
+  edges.forEach((e) => addEdge(e.source === d.id ? key : e.source, e.target === d.id ? key : e.target, e.label, e.module));
+  afterChange();
+  cy.elements().unselect();
+  node(key).select();
+  log(`${d.display} is now a ${TYPES[type].label.toLowerCase()}.`);
 }
 
 function connRow(n, rel) {
@@ -593,6 +740,7 @@ function loadGraph(data) {
     for (const e of data.edges || []) addEdge(e.source, e.target, e.label, e.module);
   });
   refreshSizes();
+  refreshTexts();
   renderLegend();
   renderDetails();
   $('#empty').hidden = cy.nodes().length > 0;
@@ -738,6 +886,7 @@ $('#search').addEventListener('keydown', (e) => {
 });
 
 $('#btn-layout').addEventListener('click', () => runLayout());
+$('#show-sub').addEventListener('change', refreshTexts);
 $('#layout-select').addEventListener('change', () => runLayout());
 $('#btn-fit').addEventListener('click', () => cy.animate({ fit: { eles: cy.elements().not('.hidden'), padding: 60 } }, { duration: 300 }));
 $('#btn-clear-log').addEventListener('click', () => $('#log').replaceChildren());

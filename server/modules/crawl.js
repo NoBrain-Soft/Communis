@@ -77,7 +77,10 @@ export default {
     }
 
     // an address like jane.doe@ belongs to Jane Doe wherever on the site it was printed
-    const list = [...people.values()].slice(0, 40);
+    // a "name" made of the company's own words (site name, domain) is the company, not a person
+    const words = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const own = new Set([...words(site.split('.')[0]), ...[...loose.orgs].flatMap(words)]);
+    const list = [...people.values()].filter((p) => !words(p.name).every((w) => own.has(w))).slice(0, 40);
     for (const e of loose.emails) {
       const scored = list.map((p) => [emailNameMatch(e, p.name), p]).filter(([s]) => s > 0).sort((a, b) => b[0] - a[0]);
       if (scored.length && (scored[0][0] === 2 || scored.length === 1) && (scored.length === 1 || scored[1][0] < scored[0][0])) { scored[0][1].emails.push(e); scored[0][1].sure = true; }

@@ -94,3 +94,27 @@ test('social profile search uses graph context and keeps only plausible profiles
   assert.equal(r.entities[0].props.confidence, 'candidate');
   assert.match(r.notes.join(' '), /other networks/);
 });
+
+test('section headings and company names are not people (German site)', async () => {
+  for (const bad of ['Unsere Ziele', 'Unser Nachhaltigkeitsbericht', 'Richter Pharma', 'Über Uns', 'Unsere Werte', 'Acme Holding', 'Notre Équipe', 'Quienes Somos'])
+    assert.equal(personName(bad), '', bad);
+  const about = `<html><body><h1>Über uns</h1>
+    <h2>Unsere Ziele</h2><p>Wir wollen wachsen. Unser Vertrieb und Marketing helfen dabei. office@richter-test.at</p>
+    <h2>Nordwind Handel</h2><p>Seit 1950 für Sie da.</p>
+    <h2>Geschäftsführung</h2>
+    <h3>Mag. Roland Huemer</h3><p>Geschäftsführer</p>
+    <h3>Stefan Reisinger</h3><p>Leiter Vertrieb</p><a href="mailto:stefan.reisinger@richter-test.at">E-Mail</a>
+    <h3>Marlene Pramhaas</h3><p>Seit 2019 im Team.</p>
+    <h3>Xyrq Zvolt</h3><p>Seit 2020 im Team.</p></body></html>`;
+  const http = { async raw(url) {
+    const html = { '/': '<html><head><meta property="og:site_name" content="Nordwind Handel"></head><body><a href="/ueber-uns">Über uns</a></body></html>', '/ueber-uns': about }[new URL(url).pathname];
+    if (html == null) throw new Error('404');
+    return page(url, html);
+  } };
+  const r = await runModule(mods.get('site_people'), { type: 'domain', value: 'nordwind-handel.test' }, {}, http);
+  const persons = Object.fromEntries(r.entities.filter((e) => e.type === 'person').map((e) => [e.value, e.props]));
+  assert.deepEqual(Object.keys(persons).sort(), ['Marlene Pramhaas', 'Roland Huemer', 'Stefan Reisinger']);
+  assert.equal(persons['Roland Huemer'].role, 'Geschäftsführer');
+  assert.equal(persons['Roland Huemer'].confidence, undefined);
+  assert.equal(persons['Stefan Reisinger'].role, 'Leiter Vertrieb');
+});

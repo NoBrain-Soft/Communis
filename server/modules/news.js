@@ -1,4 +1,4 @@
-import { ddg, googleNews } from '../lib/search.js';
+import { webSearch, googleNews } from '../lib/search.js';
 
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
 
@@ -24,7 +24,7 @@ export default {
     if (sites.length) {
       try {
         // news aggregators do not index every local paper, so ask a web search engine for those sites directly
-        const hits = await ddg(`"${value}" ${sites.length > 1 ? `(${sites.map((s) => `site:${s}`).join(' OR ')})` : `site:${sites[0]}`}`, ctx);
+        const hits = await webSearch(`"${value}" ${sites.length > 1 ? `(${sites.map((s) => `site:${s}`).join(' OR ')})` : `site:${sites[0]}`}`, ctx);
         hits.filter((h) => sites.some((s) => hostOf(h.href).endsWith(s))).slice(0, 12).forEach((h) => add(h.href, h.title, { source: hostOf(h.href) }));
       } catch (e) { errors.push(e); notes.push(`Search on ${sites.join(', ')}: ${e.message}`); }
     } else notes.push('Tip: list your own news sites (e.g. a regional paper) in Settings to search them as well.');

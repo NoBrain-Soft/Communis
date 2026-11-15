@@ -1,5 +1,5 @@
 import tls from 'node:tls';
-import { ddg } from '../lib/search.js';
+import { webSearch } from '../lib/search.js';
 import { extractFromHtml, socialProfile } from '../lib/extract.js';
 import { isIP, registrableDomain } from '../../shared/entities.js';
 
@@ -169,7 +169,7 @@ export default [
     description: 'Top search results mentioning the exact value. Search engines may rate-limit automated queries.',
     inputs: ['person', 'email', 'username', 'phone', 'organization', 'phrase'],
     async run({ value }, ctx) {
-      const entities = (await ddg(`"${value}"`, ctx)).slice(0, 10).map(({ href, title }) => {
+      const entities = (await webSearch(`"${value}"`, ctx)).slice(0, 10).map(({ href, title }) => {
         const sp = socialProfile(href);
         return sp ? { type: 'profile', value: sp.url, label: `${sp.site}: ${sp.username}`, rel: 'search result', props: { site: sp.site, username: sp.username, title, confidence: 'candidate' } }
           : { type: 'url', value: href, rel: 'search result', props: { title } };
@@ -195,7 +195,7 @@ export default [
       for (const [label, q] of queries) {
         try {
           let n = 0;
-          for (const { href, title } of await ddg(q.replace(/\s+/g, ' '), ctx)) {
+          for (const { href, title } of await webSearch(q.replace(/\s+/g, ' '), ctx)) {
             const sp = socialProfile(href);
             if (!sp || !fold(`${title} ${decodeURIComponent(href)}`).includes(last)) continue;
             entities.push({ type: 'profile', value: sp.url, label: `${sp.site}: ${sp.username}`, rel: 'possible profile', props: { site: sp.site, username: sp.username, title, confidence: 'candidate' } });

@@ -111,7 +111,9 @@ entity types at each step.
 | Analyse photo | photo | the image | GPS position, camera, date, fingerprint |
 | Phone country / Break apart | phone, e-mail, URL, … | local | country; parts of a value |
 
-None needs an API key. News sites and region are set under Settings (gear icon). A GitHub token (Settings) only raises GitHub's rate limit.
+None needs an API key. Web and social-profile search use DuckDuckGo's HTML page, which refuses automated
+queries from some networks (data centres in particular); a Brave Search API key or a SearXNG address can be
+set under Settings as a reliable alternative. News sites and region are set under Settings (gear icon). A GitHub token (Settings) only raises GitHub's rate limit.
 Four modules contact the target itself (*Scrape web page*, *Crawl site for people & contacts*, *Pictures of people on this page*, *TLS certificate*); all others query third parties.
 
 ### Adding a module
@@ -144,6 +146,13 @@ point the link at the input, and `props.confidence` to mark it as an unverified 
 - The people crawler also reads imprint-style text: lines such as `Geschäftsführung: Mag. A B, DI C D`, names
   carrying academic titles (Mag., Dr., DI (FH), Prof., MBA, …), `Name, Role` pairs, and company facts
   (VAT/UID number, company register number and court, legal form, address).
+- The crawler separates **people of the organisation** (a card with a role or contact, an imprint line, a
+  personal address at the site's domain, or a role that names the organisation) from people who are **only
+  mentioned** in its texts (a politician at an opening, a testimonial author). The latter are drawn faded with
+  a dotted ring, linked with "mentioned on site" / "mentions", and listed separately in the overview.
+- Press and news pages are read as **press items** (dated headlines, also when they are accordions on one
+  page), each linked to the people its text names, with the description used there as their role
+  ("Upper Austrian Governor").
 - The people crawler reads plain HTML. It recognises names in headings and structured data next to a role
   or contact detail; sites rendered by JavaScript, or unusual layouts, will be missed or need checking.
 - Results are leads, not facts: name matches (Wikidata, OpenAlex, GitHub by name) can be a different
@@ -158,3 +167,16 @@ npm test
 ```
 
 The portrait used as a test fixture (`test/fixtures/portrait.png`) is a public-domain NASA photograph.
+
+## Live test status
+
+![People behind a website, run on a live site](docs/live-richter.png)
+
+Run against real services and sites (richter-pharma.com in German and English, eff.org, python.org, tips.at):
+people crawler, press items, pictures and face crops, web scrape, DNS (DoH fallback), certificate
+transparency, IP geolocation, Shodan InternetDB, Wikidata, Google News, NVD (CVE lookup and details).
+
+Not yet run against the real service: WHOIS on port 43, RDAP (its registry redirects were not reachable from
+the test network), DuckDuckGo-based web/social search and the optional Brave/SearXNG route (the engines refused
+the test network), username check, Gravatar, GitHub, OpenAlex, geocoding, Wayback, reverse IP, AS prefixes,
+TLS certificate.

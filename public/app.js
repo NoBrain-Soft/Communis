@@ -56,6 +56,7 @@ const cy = cytoscape({
     } },
     { selector: 'node.guess', style: { opacity: 0.6, 'border-width': 2, 'border-style': 'dashed', 'border-color': '#ffffff' } },
     { selector: 'node.running', style: { 'underlay-color': '#4aa8ff', 'underlay-opacity': 0.35, 'underlay-padding': 9, 'underlay-shape': 'ellipse' } },
+    { selector: 'node.mention', style: { 'background-opacity': 0.5, 'border-width': 2, 'border-style': 'dotted', 'border-color': '#f59e42' } },
     { selector: 'node.xref', style: { 'border-width': 3, 'border-style': 'double', 'border-color': '#ffd166' } },
     { selector: 'node:selected', style: { 'border-width': 3, 'border-style': 'solid', 'border-color': '#ffffff', opacity: 1, color: '#ffffff' } },
     { selector: 'edge', style: {
@@ -130,6 +131,13 @@ function subLabel(d) {
   const s = String(t || '').replace(/\s+/g, ' ').trim();
   return s.length > 40 ? `${s.slice(0, 39)}…` : s;
 }
+/** A person the graph only knows from being mentioned in a text (a guest at an event), not as part of the organisation. */
+function isMentionOnly(n) {
+  if (n.data('type') !== 'person') return false;
+  const incoming = n.incomers('edge');
+  return incoming.length > 0 && incoming.every((e) => /^mention/.test(e.data('label'))) && n.outgoers('edge').length === 0;
+}
+
 function refreshTexts() {
   const show = $('#show-sub').checked;
   cy.batch(() => cy.nodes().forEach((n) => {
@@ -137,6 +145,7 @@ function refreshTexts() {
     const base = d.display.length > 30 ? `${d.display.slice(0, 29)}…` : d.display;
     const sub = show ? subLabel(d) : '';
     n.data('text', sub ? `${base}\n${sub}` : base);
+    n.toggleClass('mention', isMentionOnly(n));
   }));
 }
 
@@ -237,7 +246,7 @@ function organisedPositions() {
     // a contact detail that is linked to both the hub and a person belongs next to the person
     for (const n of queue) {
       const par = parent.get(n.id());
-      if (!par || kids.get(n.id()).length || !DETAIL_TYPES.has(n.data('type')) || par.data('type') === 'person') continue;
+      if (!par || !DETAIL_TYPES.has(n.data('type')) || par.data('type') === 'person' || kids.get(n.id()).some((k) => k.data('type') === 'person')) continue;
       const owner = n.neighborhood('node[type = "person"]').not('.hidden').filter((x) => parent.has(x.id()) && x.id() !== par.id())[0];
       if (!owner) continue;
       kids.set(par.id(), kids.get(par.id()).filter((x) => x.id() !== n.id()));
@@ -262,7 +271,7 @@ function organisedPositions() {
       const a = rings[d].sort((x, y) => x - y);
       let gap = a.length > 1 ? 2 * Math.PI - (a[a.length - 1] - a[0]) : 2 * Math.PI;
       for (let i = 1; i < a.length; i++) gap = Math.min(gap, a[i] - a[i - 1]);
-      radius[d] = Math.max(radius[d - 1] + (d === 1 ? 200 : 160), 105 / gap);
+      radius[d] = Math.max(radius[d - 1] + (d === 1 ? 220 : 170), 150 / gap);
     }
     queue.forEach((n) => { const q = pos[n.id()]; q.x = Math.cos(q.angle) * radius[q.depth]; q.y = Math.sin(q.angle) * radius[q.depth]; });
     const reach = Math.max(...queue.map((n) => Math.hypot(pos[n.id()].x, pos[n.id()].y))) + 110;
@@ -686,20 +695,29 @@ function renderOverview(box) {
     box.append(h('h2', {}, `Seen in other investigations (${shared.length})`));
     shared.forEach((n) => box.append(connRow(n, xref[n.id()].map((x) => x.name).join(', '))));
   }
-  if (people.length) {
-    const sure = people.filter((n) => !n.data('props').confidence);
-    box.append(h('h2', {}, `People (${people.length})`));
+  const personRow = (n) => {
+    const d = n.data();
+    const near = (type) => n.neighborhood(`node[type = "${type}"]`).map((x) => x.data('value'));
+    const facts = [...near('email'), ...near('phone'), ...n.neighborhood('node[type = "profile"]').map((x) => x.data('display'))];
+    const articles = n.incomers('edge').filter((e) => /^mention/.test(e.data('label')) && e.source().data('type') === 'url').length;
+    if (articles) facts.push(`mentioned in ${articles} item${articles > 1 ? 's' : ''}`);
+    return h('div', { class: `ov-person${d.props.confidence ? ' cand' : ''}`, title: d.props.context || '' }, chip('person'),
+      h('button', { class: 'ov-name', title: 'Open', onclick: () => focusNode(n) }, d.display, subLabel(d) ? h('span', { class: 'ov-role' }, subLabel(d)) : null, d.props.confidence ? h('span', { class: 'badge' }, 'unverified') : null),
+      h('div', { class: 'ov-facts' }, facts.length ? facts.join(' · ') : 'no contact details found'),
+      h('button', { title: personTpl.description, onclick: () => { focusNode(n); runTemplate(personTpl, n.id()); } }, 'Investigate'));
+  };
+  const own = people.filter((n) => !isMentionOnly(n));
+  const guests = people.filter((n) => isMentionOnly(n));
+  if (own.length) {
+    const sure = own.filter((n) => !n.data('props').confidence);
+    box.append(h('h2', {}, `People (${own.length})`));
     if (sure.length > 1) box.append(h('div', { class: 'd-actions', style: 'margin:0 0 8px' },
       h('button', { title: 'Runs “Investigate a person” on each confirmed person, one after the other', onclick: async () => { for (const n of sure.toArray()) await runTemplate(personTpl, n.id(), { quiet: true }); } }, `Investigate all ${sure.length} confirmed people`)));
-    people.forEach((n) => {
-      const d = n.data();
-      const near = (type) => n.neighborhood(`node[type = "${type}"]`).map((x) => x.data('value'));
-      const facts = [...near('email'), ...near('phone'), ...n.neighborhood('node[type = "profile"]').map((x) => x.data('display'))];
-      box.append(h('div', { class: `ov-person${d.props.confidence ? ' cand' : ''}` }, chip('person'),
-        h('button', { class: 'ov-name', title: 'Open', onclick: () => focusNode(n) }, d.display, subLabel(d) ? h('span', { class: 'ov-role' }, subLabel(d)) : null, d.props.confidence ? h('span', { class: 'badge' }, 'unverified') : null),
-        h('div', { class: 'ov-facts' }, facts.length ? facts.join(' · ') : 'no contact details found'),
-        h('button', { title: personTpl.description, onclick: () => { focusNode(n); runTemplate(personTpl, n.id()); } }, 'Investigate')));
-    });
+    own.forEach((n) => box.append(personRow(n)));
+  }
+  if (guests.length) {
+    box.append(h('h2', { title: 'Named in a text (a press item, a history page) without being presented as part of the organisation' }, `Only mentioned (${guests.length})`));
+    guests.forEach((n) => box.append(personRow(n)));
   }
   for (const type of TYPE_ORDER.filter((t) => t !== 'person')) {
     const list = cy.nodes(`[type = "${type}"]`).not('.hidden').sort(byName);
@@ -1046,11 +1064,14 @@ $('#btn-settings').addEventListener('click', async () => {
   $('#set-github-state').textContent = s.githubToken ? 'A token is saved. Enter a new one to replace it.' : 'No token saved.';
   $('#set-news-sites').value = s.newsSites || '';
   $('#set-news-region').value = s.newsRegion || '';
+  $('#set-searx').value = s.searxUrl || '';
+  $('#set-brave').value = '';
+  $('#set-brave').placeholder = s.braveKey ? 'a key is saved' : 'optional';
   $('#dlg-settings').showModal();
 });
 $('#dlg-settings').addEventListener('close', async (e) => {
   if (e.target.returnValue !== 'ok') return;
-  await api('/api/settings', { method: 'PUT', body: { githubToken: $('#set-github').value.trim(), newsSites: $('#set-news-sites').value, newsRegion: $('#set-news-region').value || 'US:en' } });
+  await api('/api/settings', { method: 'PUT', body: { githubToken: $('#set-github').value.trim(), newsSites: $('#set-news-sites').value, newsRegion: $('#set-news-region').value || 'US:en', braveKey: $('#set-brave').value.trim(), searxUrl: $('#set-searx').value.trim() } });
   log('Settings saved.');
 });
 

@@ -19,6 +19,7 @@
     <button class="primary" type="submit">Add</button>
   </form>
   <div class="tools">
+    <button id="btn-templates" title="Ready-made investigations that run several searches in sequence">Templates</button>
     <button id="btn-import-text" title="Paste text and extract every entity in it">Extract from text</button>
     <button id="btn-upload" title="Add a photo from your computer">Add photo</button>
     <input id="file-photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden>
@@ -55,6 +56,7 @@
       <h1>Start an investigation</h1>
       <p>Add a first entity in the bar above. Then run searches on it: every result becomes a node, and entities that turn up from several directions link together automatically.</p>
       <div class="examples" id="examples"></div>
+      <p class="hint"><button id="btn-templates-2" class="primary">Start from a template</button></p>
       <p class="hint">Or paste a block of text with <b>Extract from text</b>, add a photo, or <a href="#" id="link-demo">load the demo graph</a>.</p>
     </div>
     <div id="jobs" class="jobs" hidden><span class="spinner"></span><span id="jobs-text"></span></div>
@@ -77,6 +79,13 @@
     <textarea id="text-input" rows="12" placeholder="Paste text here…"></textarea>
     <div class="dlg-actions"><button value="cancel">Cancel</button><button id="text-ok" class="primary" value="ok">Extract</button></div>
   </form>
+</dialog>
+
+<dialog id="dlg-templates" class="wide">
+  <h2>Investigation templates</h2>
+  <p class="muted">A template runs a fixed sequence of searches from one starting point and builds the graph for you. Progress is shown in the activity log.</p>
+  <div id="tpl-list" class="tpl-list"></div>
+  <div class="dlg-actions"><button id="tpl-close">Close</button></div>
 </dialog>
 
 <dialog id="dlg-settings">

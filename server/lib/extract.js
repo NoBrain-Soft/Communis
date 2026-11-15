@@ -23,6 +23,7 @@ const SOCIAL = [
   { site: 'GitLab', host: /^gitlab\.com$/, path: /^\/([A-Za-z0-9_.-]{2,60})\/?$/, url: (u) => `https://gitlab.com/${u}` },
   { site: 'LinkedIn', host: /^(?:[a-z]{2,3}\.)?linkedin\.com$/, path: /^\/(?:in|company)\/([^/]+)\/?$/ },
   { site: 'Instagram', host: /^(?:www\.)?instagram\.com$/, path: /^\/([A-Za-z0-9_.]{1,30})\/?$/, url: (u) => `https://www.instagram.com/${u}` },
+  { site: 'Facebook', host: /^(?:www\.|m\.|[a-z]{2}-[a-z]{2}\.)?facebook\.com$/, path: /^\/people\/([^/]+)\/\d+\/?$/ },
   { site: 'Facebook', host: /^(?:www\.|m\.|[a-z]{2}-[a-z]{2}\.)?facebook\.com$/, path: /^\/([A-Za-z0-9.]{3,50})\/?$/, url: (u) => `https://www.facebook.com/${u}` },
   { site: 'Telegram', host: /^(?:t\.me|telegram\.me)$/, path: /^\/([A-Za-z0-9_]{4,32})\/?$/, url: (u) => `https://t.me/${u}` },
   { site: 'YouTube', host: /^(?:www\.)?youtube\.com$/, path: /^\/(?:@|c\/|user\/|channel\/)([^/]+)\/?$/ },

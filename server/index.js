@@ -66,7 +66,9 @@ export async function runModule(mod, entity, settings, fetchImpl = fetcher) {
   const value = normalize(entity.type, entity.value);
   if (!value) throw new Error(`"${entity.value}" is not a valid ${TYPES[entity.type]?.label || entity.type}`);
   if (!mod.inputs.includes(entity.type)) throw new Error(`${mod.name} does not accept ${entity.type} entities`);
-  const input = { type: entity.type, value, props: entity.props || {} };
+  const names = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, 5).map((x) => x.slice(0, 80)) : []);
+  // what the graph already links this entity to; lets searches narrow down namesakes
+  const input = { type: entity.type, value, props: entity.props || {}, context: { orgs: names(entity.context?.orgs), domains: names(entity.context?.domains) } };
   let timer;
   const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('The module took too long and was stopped')), 60000); });
   try {

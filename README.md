@@ -38,6 +38,26 @@ Options (environment variables): `PORT`, `HOST` (default `127.0.0.1`), `COMMUNIS
   search, …).
 - **Investigations** are saved automatically in `data/` and can be exported as JSON, CSV or PNG.
 
+### Templates
+
+Ready-made investigations that run several searches in sequence (the **Templates** button, or on any
+matching node):
+
+| Template | Starts from | What it does |
+|---|---|---|
+| People behind a website | domain, URL | Crawls the home page plus team/about/contact/imprint pages, finds the people named there with role, e-mail, phone, portrait and social profiles, adds the domain registrant, then looks up each address |
+| Investigate a person | person | Searches LinkedIn, Facebook, X, Instagram, GitHub and the web for the name (narrowed by the organisation the person is linked to in the graph), Wikidata, then the person's e-mails, usernames and pictures |
+| Trace an e-mail address | e-mail | Gravatar and GitHub identities, mentions, mail domain, same handle on other sites |
+| Follow a username | username | Accounts on 16 sites, what they publish, which share an avatar |
+| Map a domain's infrastructure | domain | DNS, registration, certificates, subdomains, then servers, networks, ports and CVEs |
+| Profile an IP address | IP | Location, operator, exposed services, co-hosted sites |
+
+![Result of the People behind a website template on a test site](docs/template-people.png)
+
+Typical flow: run *People behind a website*, click one of the people it found, run *Investigate a person*.
+Templates live in `public/templates.js`; adding one is a few lines listing which modules run on which
+entity types at each step.
+
 ### Search modules
 
 | Module | Input | Source | Finds |
@@ -48,6 +68,8 @@ Options (environment variables): `PORT`, `HOST` (default `127.0.0.1`), `COMMUNIS
 | Subdomains from certificates | domain | crt.sh | subdomains |
 | TLS certificate | domain, IP | target host | certificate, alternative names, owner |
 | Scrape web page | domain, URL, profile | target site | e-mails, phones, social profiles, people, images, technologies, linked sites |
+| Crawl site for people & contacts | domain, URL | target site (up to 14 pages) | people with role, e-mail, phone, portrait, profiles; shared contact details |
+| Find social profiles | person | DuckDuckGo | candidate LinkedIn, Facebook, X, Instagram, GitHub profiles |
 | Archived pages | domain | Wayback Machine | old URLs, documents, forgotten subdomains |
 | IP allocation | IP, netblock | rdap.org | netblock, holder, abuse contact |
 | IP geolocation & ASN | IP | ipwho.is | location, AS number, operator |
@@ -67,7 +89,7 @@ Options (environment variables): `PORT`, `HOST` (default `127.0.0.1`), `COMMUNIS
 | Phone country / Break apart | phone, e-mail, URL, … | local | country; parts of a value |
 
 None needs an API key. A GitHub token (Settings) only raises GitHub's rate limit.
-Two modules contact the target itself (*Scrape web page*, *TLS certificate*); all others query third parties.
+Three modules contact the target itself (*Scrape web page*, *Crawl site for people & contacts*, *TLS certificate*); all others query third parties.
 
 ### Adding a module
 
@@ -96,6 +118,8 @@ point the link at the input, and `props.confidence` to mark it as an unverified 
 
 - The server only listens on localhost and rejects requests from other origins. It fetches whatever URLs
   you point it at, so do not expose it to a network you do not trust.
+- The people crawler reads plain HTML. It recognises names in headings and structured data next to a role
+  or contact detail; sites rendered by JavaScript, or unusual layouts, will be missed or need checking.
 - Results are leads, not facts: name matches (Wikidata, OpenAlex, GitHub by name) can be a different
   person, and IP geolocation is approximate. Unverified candidates are drawn dashed.
 - Use it for lawful purposes only: your own assets, authorised security assessments, journalism and

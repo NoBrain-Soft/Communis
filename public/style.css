@@ -144,3 +144,16 @@ dialog textarea { width: 100%; font-family: var(--mono); font-size: 12px; }
   .layout { grid-template-columns: 180px minmax(0, 1fr) 290px; }
   .tools button:not(.icon-btn) { padding: 5px 7px; }
 }
+
+dialog.wide { width: min(760px, 94vw); }
+.tpl-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; margin-top: 12px; max-height: 62vh; overflow-y: auto; }
+.tpl { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--bg); display: flex; flex-direction: column; gap: 8px; }
+.tpl h3 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.tpl p { margin: 0; color: var(--muted); font-size: 12.5px; flex: 1; }
+.tpl ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+.tpl form { display: flex; gap: 6px; }
+.tpl input { flex: 1; font-family: var(--mono); font-size: 12.5px; }
+.tpl-btns { display: flex; flex-direction: column; gap: 6px; }
+.tpl-btns button { text-align: left; white-space: normal; }
+.tpl-btns small { display: block; color: var(--muted); font-weight: 400; }
+.log .step { color: var(--accent); }

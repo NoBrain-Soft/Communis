@@ -16,6 +16,25 @@ const HEADER_TECH = [
 const ASSET = /\.(css|js|png|jpe?g|gif|svg|ico|woff2?|ttf|eot|map|webp|mp4|json|xml|txt)(\?|$)/i;
 const DOCUMENT = /\.(pdf|docx?|xlsx?|pptx?|csv|zip|sql|bak|env|conf|log)(\?|$)/i;
 
+/** DuckDuckGo HTML results as [{ href, title }]. */
+async function ddg(query, ctx) {
+  const html = await ctx.http.text(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, { headers: { accept: 'text/html', 'accept-language': 'en' } });
+  const out = [];
+  const seen = new Set();
+  for (const m of html.matchAll(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)) {
+    let href = m[1].replace(/&amp;/g, '&');
+    const redirect = href.match(/[?&]uddg=([^&]+)/);
+    if (redirect) href = decodeURIComponent(redirect[1]);
+    if (!/^https?:/.test(href) || seen.has(href) || /duckduckgo\.com\/y\.js/.test(href)) continue;
+    seen.add(href);
+    out.push({ href, title: m[2].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&quot;/g, '"').trim() });
+  }
+  if (!out.length && /anomaly|captcha|challenge/i.test(html)) throw new Error('DuckDuckGo is rate-limiting automated searches right now. Try again later or use the search links below.');
+  return out;
+}
+
+const fold = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
 export default [
   {
     id: 'web_scrape', name: 'Scrape web page', group: 'Web', source: 'target site',
@@ -149,23 +168,44 @@ export default [
     description: 'Top search results mentioning the exact value. Search engines may rate-limit automated queries.',
     inputs: ['person', 'email', 'username', 'phone', 'organization', 'phrase'],
     async run({ value }, ctx) {
-      const html = await ctx.http.text(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(`"${value}"`)}`, { headers: { accept: 'text/html', 'accept-language': 'en' } });
-      const entities = [];
-      const seen = new Set();
-      for (const m of html.matchAll(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)) {
-        let href = m[1].replace(/&amp;/g, '&');
-        const redirect = href.match(/[?&]uddg=([^&]+)/);
-        if (redirect) href = decodeURIComponent(redirect[1]);
-        if (!/^https?:/.test(href) || seen.has(href) || /duckduckgo\.com\/y\.js/.test(href)) continue;
-        seen.add(href);
-        const title = m[2].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&quot;/g, '"').trim();
+      const entities = (await ddg(`"${value}"`, ctx)).slice(0, 10).map(({ href, title }) => {
         const sp = socialProfile(href);
-        if (sp) entities.push({ type: 'profile', value: sp.url, label: `${sp.site}: ${sp.username}`, rel: 'search result', props: { site: sp.site, username: sp.username, title, confidence: 'candidate' } });
-        else entities.push({ type: 'url', value: href, rel: 'search result', props: { title } });
-        if (entities.length >= 10) break;
-      }
-      if (!entities.length && /anomaly|captcha|challenge/i.test(html)) throw new Error('DuckDuckGo is rate-limiting automated searches right now. Try again later or use the search links below.');
+        return sp ? { type: 'profile', value: sp.url, label: `${sp.site}: ${sp.username}`, rel: 'search result', props: { site: sp.site, username: sp.username, title, confidence: 'candidate' } }
+          : { type: 'url', value: href, rel: 'search result', props: { title } };
+      });
       return { entities };
+    },
+  },
+  {
+    id: 'social_search', name: 'Find social profiles', group: 'People', source: 'DuckDuckGo', auto: false,
+    description: 'Searches LinkedIn, Facebook, X, Instagram and GitHub for profiles carrying this name, narrowed by the organisation or site the person is linked to in the graph. Candidates to verify, not confirmed matches.',
+    inputs: ['person'],
+    async run({ value, context }, ctx) {
+      const hint = context?.orgs?.[0] || context?.domains?.[0]?.split('.')[0] || '';
+      const last = fold(value).split(/\s+/).pop();
+      const queries = [
+        ['LinkedIn', `"${value}" ${hint} site:linkedin.com/in`],
+        ['Facebook', `"${value}" ${hint} site:facebook.com`],
+        ['other networks', `"${value}" ${hint} (site:x.com OR site:instagram.com OR site:github.com)`],
+      ];
+      const entities = [];
+      const failed = [];
+      let lastError;
+      for (const [label, q] of queries) {
+        try {
+          let n = 0;
+          for (const { href, title } of await ddg(q.replace(/\s+/g, ' '), ctx)) {
+            const sp = socialProfile(href);
+            if (!sp || !fold(`${title} ${decodeURIComponent(href)}`).includes(last)) continue;
+            entities.push({ type: 'profile', value: sp.url, label: `${sp.site}: ${sp.username}`, rel: 'possible profile', props: { site: sp.site, username: sp.username, title, confidence: 'candidate' } });
+            if (++n >= 3) break;
+          }
+        } catch (e) { failed.push(label); lastError = e; }
+      }
+      if (failed.length === queries.length) throw lastError;
+      const notes = [hint ? `Searched with "${hint}" as context.` : 'No organisation linked to this person yet, so the search used the name alone; expect namesakes.'];
+      if (failed.length) notes.push(`Search failed for: ${failed.join(', ')}.`);
+      return { entities, notes };
     },
   },
 ];

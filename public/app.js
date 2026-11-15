@@ -1,5 +1,6 @@
 import { TYPES, GROUPS, normalize, keyOf, detectType } from '/shared/entities.js';
 import { iconSvg, iconDataUri } from '/icons.js';
+import { TEMPLATES } from '/templates.js';
 
 const BG = '#0d1117';
 const $ = (s) => document.querySelector(s);
@@ -240,7 +241,9 @@ async function runModule(key, modId) {
   const d = n.data();
   return enqueue(async () => {
     let res;
-    try { res = await api('/api/run', { method: 'POST', body: { module: modId, entity: { type: d.type, value: d.value, props: d.props } } }); }
+    const near = (type) => node(key).neighborhood(`node[type = "${type}"]`).filter((x) => !x.data('props').confidence).map((x) => x.data('value')).slice(0, 5);
+    const context = d.type === 'person' ? { orgs: near('organization'), domains: near('domain') } : undefined;
+    try { res = await api('/api/run', { method: 'POST', body: { module: modId, entity: { type: d.type, value: d.value, props: d.props, context } } }); }
     catch (e) { res = { ok: false, error: e.message }; }
     if (!node(key).length) return [];
     if (!res.ok) {
@@ -284,6 +287,66 @@ async function discover(rootKey, depth = 2) {
   log('Discovery finished.');
 }
 
+// ---- templates ----------------------------------------------------------------------------------
+const templatesFor = (type) => TEMPLATES.filter((t) => t.inputs.includes(type));
+
+/** Runs a template's steps in order; each step works on what the earlier steps found. */
+async function runTemplate(tpl, rootKey) {
+  const root = node(rootKey);
+  if (!root.length) return;
+  const scope = new Set([rootKey]);
+  const done = new Set();
+  log(`Template “${tpl.name}” started on ${root.data('display')}.`, 'step');
+  for (const [i, step] of tpl.steps.entries()) {
+    let pool = [...scope];
+    // entities that were already attached to the starting point before the template ran count as well
+    if (step.neighbours && node(rootKey).length) pool = [...new Set([...pool, ...node(rootKey).neighborhood('node').map((n) => n.id())])];
+    const targets = (step.on === 'start' ? [rootKey] : pool.filter((k) => {
+      const n = node(k);
+      return n.length && k !== rootKey && step.on.includes(n.data('type')) && (step.guesses || !n.data('props').confidence);
+    })).slice(0, step.limit || 20);
+    const jobs = [];
+    for (const k of targets) {
+      for (const m of step.modules) {
+        if (!modById(m)?.inputs.includes(node(k).data('type')) || done.has(`${k}|${m}`)) continue;
+        done.add(`${k}|${m}`);
+        jobs.push(runModule(k, m));
+      }
+    }
+    if (!jobs.length) continue;
+    log(`Step ${i + 1} of ${tpl.steps.length}: ${step.label} (${targets.length} ${targets.length === 1 ? 'entity' : 'entities'})…`, 'step');
+    (await Promise.all(jobs)).flat().forEach((k) => scope.add(k));
+  }
+  const people = [...scope].filter((k) => node(k).length && node(k).data('type') === 'person' && k !== rootKey).length;
+  log(`Template “${tpl.name}” finished: ${scope.size - 1} new entities${people ? `, ${people} of them people. Select a person and run “Investigate a person” to go deeper` : ''}.`, 'step');
+  // let the last layout pass settle before framing the result
+  setTimeout(() => cy.animate({ fit: { eles: cy.elements().not('.hidden'), padding: 60 } }, { duration: 300 }), 900);
+}
+
+function openTemplates() {
+  const sel = selected();
+  const cur = sel.length === 1 ? sel[0].data() : null;
+  $('#tpl-list').replaceChildren(...TEMPLATES.map((t) => {
+    const input = h('input', { type: 'text', placeholder: t.placeholder, 'aria-label': `Starting point for ${t.name}`, spellcheck: 'false', value: cur && t.inputs.includes(cur.type) ? cur.value : null });
+    const start = (e) => {
+      e.preventDefault();
+      const v = input.value.trim();
+      if (!v) return input.focus();
+      const guess = detectType(v);
+      const key = addManual(t.inputs.includes(guess) ? guess : t.inputs[0], v);
+      if (!key) return;
+      $('#dlg-templates').close();
+      runTemplate(t, key);
+    };
+    return h('div', { class: 'tpl' },
+      h('h3', {}, chip(t.inputs[0]), t.name),
+      h('p', {}, t.description),
+      h('ol', {}, t.steps.map((st) => h('li', {}, st.label))),
+      h('form', { onsubmit: start }, input, h('button', { class: 'primary', type: 'submit' }, 'Run')));
+  }));
+  $('#dlg-templates').showModal();
+}
+
 // ---- details panel ------------------------------------------------------------------------------
 const selected = () => cy.nodes(':selected');
 const isSelected = (key) => { const s = selected(); return s.length === 1 && s[0].id() === key; };
@@ -292,7 +355,7 @@ function pivots(type, value, props) {
   const q = encodeURIComponent(value);
   const g = (s) => `https://www.google.com/search?q=${encodeURIComponent(s)}`;
   switch (type) {
-    case 'person': return [['Google', g(`"${value}"`)], ['Bing', `https://www.bing.com/search?q=%22${q}%22`], ['LinkedIn', g(`site:linkedin.com/in "${value}"`)], ['Facebook', `https://www.facebook.com/search/people/?q=${q}`], ['News', `https://news.google.com/search?q=%22${q}%22`]];
+    case 'person': return [['Google', g(`"${value}"`)], ['Bing', `https://www.bing.com/search?q=%22${q}%22`], ['LinkedIn', g(`site:linkedin.com/in "${value}"`)], ['Facebook', `https://www.facebook.com/search/people/?q=${q}`], ['X', `https://x.com/search?q=%22${q}%22&f=user`], ['Instagram', g(`site:instagram.com "${value}"`)], ['News', `https://news.google.com/search?q=%22${q}%22`]];
     case 'username': return [['X', `https://x.com/${q}`], ['Instagram', `https://www.instagram.com/${q}`], ['Facebook', `https://www.facebook.com/${q}`], ['TikTok', `https://www.tiktok.com/@${q}`], ['YouTube', `https://www.youtube.com/@${q}`], ['Twitch', `https://www.twitch.tv/${q}`], ['Google', g(`"${value}"`)]];
     case 'email': return [['Google', g(`"${value}"`)], ['Have I Been Pwned', 'https://haveibeenpwned.com/'], ['Epieos', `https://epieos.com/?q=${q}`]];
     case 'phone': return [['Google', g(`"${value}"`)], ['WhatsApp', `https://wa.me/${value.replace(/\D/g, '')}`]];
@@ -364,6 +427,12 @@ function renderDetails() {
     h('button', { class: 'primary', disabled: !mods.length, onclick: () => runAll(key), title: 'Run every automatic search below' }, 'Run all searches'),
     h('button', { disabled: !mods.length, onclick: () => discover(key, 2), title: 'Run all searches here, then again on everything they find' }, 'Discover 2 levels'),
     h('button', { class: 'danger', onclick: () => removeNodes(n) }, 'Delete')));
+
+  const tpls = templatesFor(d.type);
+  if (tpls.length) {
+    box.append(h('h2', {}, 'Templates'), h('div', { class: 'tpl-btns' },
+      tpls.map((t) => h('button', { onclick: () => runTemplate(t, key) }, t.name, h('small', {}, `${t.description.split('. ')[0].replace(/\.$/, '')}.`)))));
+  }
 
   const props = Object.entries(d.props).filter(([k, v]) => k !== 'confidence' && v != null && v !== '');
   if (props.length) {
@@ -595,6 +664,8 @@ function nodeMenu(n, x, y) {
   const key = n.id();
   const mods = modulesFor(n.data('type'));
   openMenu(x, y, [
+    ...templatesFor(n.data('type')).map((t) => ({ label: t.name, hint: 'template', run: () => runTemplate(t, key) })),
+    ...(templatesFor(n.data('type')).length ? ['-'] : []),
     ...(mods.length ? [{ label: 'Run all searches', run: () => runAll(key) }, { label: 'Discover 2 levels', run: () => discover(key, 2) }, '-',
       ...mods.map((m) => ({ label: m.name, hint: m.source, run: () => runModule(key, m.id) })), '-'] : []),
     { label: 'Select neighbours', run: () => n.neighborhood('node').select() },
@@ -674,6 +745,9 @@ $('#ws-menu-btn').addEventListener('click', (e) => { e.stopPropagation(); worksp
 $('#ws-select').addEventListener('change', (e) => openWorkspace(e.target.value));
 $('#file-json').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importFile(f); });
 
+$('#btn-templates').addEventListener('click', openTemplates);
+$('#btn-templates-2').addEventListener('click', openTemplates);
+$('#tpl-close').addEventListener('click', () => $('#dlg-templates').close());
 $('#btn-upload').addEventListener('click', () => $('#file-photo').click());
 $('#file-photo').addEventListener('change', async (e) => {
   const f = e.target.files[0];

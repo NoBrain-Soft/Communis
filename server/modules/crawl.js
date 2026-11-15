@@ -1,5 +1,5 @@
 import { extractFromHtml } from '../lib/extract.js';
-import { extractPeople, emailNameMatch, PEOPLE_PAGE } from '../lib/people.js';
+import { extractPeople, emailNameMatch, PEOPLE_PAGE, blockText, companyFacts } from '../lib/people.js';
 import { registrableDomain } from '../../shared/entities.js';
 
 const MAX_PAGES = 14;
@@ -61,12 +61,13 @@ export default {
 
     const people = new Map();
     const loose = { emails: new Set(), phones: new Set(), profiles: new Map(), orgs: new Set() };
+    let company = {};
     for (const p of pages) {
       for (const person of extractPeople(p.html, p.url)) {
         const k = person.name.toLowerCase();
         const cur = people.get(k);
         if (!cur) { people.set(k, { ...person, page: p.url }); continue; }
-        cur.role ||= person.role; cur.image ||= person.image; cur.sure ||= person.sure;
+        cur.role ||= person.role; cur.title ||= person.title; cur.image ||= person.image; cur.sure ||= person.sure;
         cur.emails.push(...person.emails); cur.phones.push(...person.phones); cur.profiles.push(...person.profiles);
       }
       const x = extractFromHtml(p.html, p.url);
@@ -74,6 +75,7 @@ export default {
       x.phones.forEach((t) => loose.phones.add(t));
       x.profiles.forEach((s) => loose.profiles.set(s.url.toLowerCase(), s));
       if (p === home) x.orgs.forEach((o) => loose.orgs.add(o));
+      if (p === home || /impressum|imprint|legal|kontakt|contact|about|ueber/i.test(new URL(p.url).pathname)) company = { ...companyFacts(blockText(p.html)), ...company };
     }
 
     // an address like jane.doe@ belongs to Jane Doe wherever on the site it was printed
@@ -92,13 +94,15 @@ export default {
     const owned = new Set();
     for (const p of list) {
       const pkey = `person:${p.name}`;
-      entities.push({ type: 'person', value: p.name, rel: 'named on site', props: { role: p.role || undefined, found_on: p.page, confidence: p.sure ? undefined : 'candidate' } });
+      entities.push({ type: 'person', value: p.name, rel: 'named on site', props: { role: p.role || undefined, title: p.title || undefined, found_on: p.page, confidence: p.sure ? undefined : 'candidate' } });
       for (const e of new Set(p.emails)) if (emailNameMatch(e, p.name) || (ec.get(e) === 1 && !SHARED_BOX.test(e))) { owned.add(e); entities.push({ type: 'email', value: e, rel: 'email', from: pkey }); }
       for (const t of new Set(p.phones)) if (pc.get(t) === 1) { owned.add(t); entities.push({ type: 'phone', value: t, rel: 'phone', from: pkey }); }
       for (const s of p.profiles) if (sc.get(s.url.toLowerCase()) === 1) { owned.add(s.url.toLowerCase()); entities.push({ type: 'profile', value: s.url, label: `${s.site}: ${s.username}`, rel: 'profile', from: pkey, props: { site: s.site, username: s.username } }); }
       if (p.image) entities.push({ type: 'photo', value: p.image, label: p.name, rel: 'portrait', from: pkey });
     }
-    [...loose.orgs].slice(0, 2).forEach((o) => entities.push({ type: 'organization', value: o, rel: 'published by' }));
+    const { address, ...legal } = company;
+    [...loose.orgs].slice(0, 2).forEach((o, i) => entities.push({ type: 'organization', value: o, rel: 'published by', props: i === 0 ? legal : {} }));
+    if (address) entities.push({ type: 'location', value: address, rel: 'registered address' });
     [...loose.emails].filter((e) => !owned.has(e)).slice(0, 25).forEach((e) => entities.push({ type: 'email', value: e, rel: 'contact address' }));
     [...loose.phones].filter((t) => !owned.has(t)).slice(0, 10).forEach((t) => entities.push({ type: 'phone', value: t, rel: 'contact number' }));
     [...loose.profiles.values()].filter((s) => !owned.has(s.url.toLowerCase())).slice(0, 15).forEach((s) => entities.push({ type: 'profile', value: s.url, label: `${s.site}: ${s.username}`, rel: 'links to profile', props: { site: s.site, username: s.username } }));
@@ -106,6 +110,6 @@ export default {
     const notes = [`Read ${pages.length} page${pages.length > 1 ? 's' : ''}: ${pages.map((p) => new URL(p.url).pathname).join(', ')}.`];
     if (failed) notes.push(`${failed} page${failed > 1 ? 's' : ''} could not be loaded.`);
     if (!list.length) notes.push('No people recognised. Sites that build their pages with JavaScript, or show names only in images, cannot be read this way.');
-    return { entities, props: { pages_crawled: pages.length, people_found: list.length }, notes };
+    return { entities, props: { pages_crawled: pages.length, people_found: list.length, ...legal }, notes };
   },
 };

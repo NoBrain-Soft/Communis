@@ -34,6 +34,16 @@ const MAIL_PROVIDERS = [
   [/pphosted\.com$/, 'Proofpoint'], [/fastmail|messagingengine/, 'Fastmail'], [/amazonaws\.com$/, 'Amazon SES'],
 ];
 
+const TXT_SERVICES = [
+  [/^google-site-verification=/i, 'Google Search Console'], [/^MS=ms/i, 'Microsoft 365'], [/^facebook-domain-verification=/i, 'Meta Business'],
+  [/^atlassian-domain-verification=/i, 'Atlassian'], [/^apple-domain-verification=/i, 'Apple'], [/^docusign=/i, 'DocuSign'],
+  [/^adobe-idp-site-verification=/i, 'Adobe'], [/^zoom-domain-verification=|^ZOOM_verify_/i, 'Zoom'], [/^stripe-verification=/i, 'Stripe'],
+  [/^hubspot-developer-verification=/i, 'HubSpot'], [/^slack-domain-verification=/i, 'Slack'], [/^dropbox-domain-verification=/i, 'Dropbox'],
+  [/^have-i-been-pwned-verification=/i, 'Have I Been Pwned'], [/^globalsign-domain-verification=/i, 'GlobalSign'], [/^cisco-ci-domain-verification=/i, 'Cisco Webex'],
+  [/^onetrust-domain-verification=/i, 'OneTrust'], [/^miro-verification=/i, 'Miro'], [/^notion-domain-verification=/i, 'Notion'],
+  [/^openai-domain-verification=/i, 'OpenAI'], [/^anthropic-domain-verification/i, 'Anthropic'], [/^mailru-verification/i, 'Mail.ru'], [/^yandex-verification/i, 'Yandex'],
+];
+
 export default [
   {
     id: 'dns_records', name: 'DNS records', group: 'Infrastructure', source: 'DNS',
@@ -66,6 +76,8 @@ export default [
       for (const rec of dmarc) {
         for (const m of rec.matchAll(/mailto:([^,;\s!]+)/gi)) entities.push({ type: 'email', value: m[1], rel: 'DMARC reports' });
       }
+      // domain-verification records reveal which services the organisation has signed up for
+      for (const rec of txt) { const t = TXT_SERVICES.find(([re]) => re.test(rec)); if (t) entities.push({ type: 'technology', value: t[1], rel: 'verified with' }); }
       const props = {};
       if (txt.length) props.txt = txt.join('\n').slice(0, 1500);
       if (dmarc.length) props.dmarc = dmarc.join(' ').slice(0, 300);

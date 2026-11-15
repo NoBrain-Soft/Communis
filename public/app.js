@@ -56,6 +56,7 @@ const cy = cytoscape({
     } },
     { selector: 'node.guess', style: { opacity: 0.6, 'border-width': 2, 'border-style': 'dashed', 'border-color': '#ffffff' } },
     { selector: 'node.running', style: { 'underlay-color': '#4aa8ff', 'underlay-opacity': 0.35, 'underlay-padding': 9, 'underlay-shape': 'ellipse' } },
+    { selector: 'node.xref', style: { 'border-width': 3, 'border-style': 'double', 'border-color': '#ffd166' } },
     { selector: 'node:selected', style: { 'border-width': 3, 'border-style': 'solid', 'border-color': '#ffffff', opacity: 1, color: '#ffffff' } },
     { selector: 'edge', style: {
       width: 1.2, 'line-color': '#364354', 'target-arrow-color': '#364354', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.8, 'curve-style': 'bezier',
@@ -184,6 +185,7 @@ function merge(inputKey, moduleId, result) {
 }
 
 function afterChange(added = []) {
+  scheduleXref();
   linkMatchingPhotos();
   refreshSizes();
   refreshTexts();
@@ -275,7 +277,9 @@ function organisedPositions() {
 function runLayout(fresh) {
   const visible = cy.elements().not('.hidden');
   if (visible.nodes().length < 2) { if (visible.nodes().length) cy.animate({ center: { eles: visible }, zoom: 1 }, { duration: 200 }); return; }
-  const name = $('#layout-select').value;
+  let name = $('#layout-select').value;
+  // tree-like graphs read best as organised wheels, heavily cross-linked ones as a force layout
+  if (name === 'auto') name = visible.edges().length <= visible.nodes().length * 1.3 ? 'radial' : 'fcose';
   const anim = { animate: true, animationDuration: 450 };
   if (name === 'radial') {
     const pos = organisedPositions();
@@ -337,7 +341,9 @@ async function runModule(key, modId) {
   return enqueue(async () => {
     let res;
     const near = (type) => node(key).neighborhood(`node[type = "${type}"]`).filter((x) => !x.data('props').confidence).map((x) => x.data('value')).slice(0, 5);
-    const context = d.type === 'person' ? { orgs: near('organization'), domains: near('domain') } : undefined;
+    const own = [d.props.employer, d.props.company, d.props.organization].filter(Boolean).map(String);
+    const context = d.type === 'person' ? { orgs: [...own, ...near('organization')], domains: near('domain') }
+      : ['url', 'domain', 'profile'].includes(d.type) ? { known: cy.nodes('[type = "person"], [type = "organization"]').filter((x) => !x.data('props').confidence).map((x) => ({ type: x.data('type'), value: x.data('value') })).slice(0, 400) } : undefined;
     try { res = await api('/api/run', { method: 'POST', body: { module: modId, entity: { type: d.type, value: d.value, props: d.props, context } } }); }
     catch (e) { res = { ok: false, error: e.message }; }
     if (!node(key).length) return [];
@@ -501,7 +507,8 @@ function renderDetails() {
   if (sel.length > 1) {
     box.append(h('div', { class: 'd-head' }, h('div', {}, h('div', { class: 'd-value' }, `${sel.length} entities selected`))));
     const actions = h('div', { class: 'd-actions' });
-    if (sel.length === 2) actions.append(h('button', { class: 'primary', onclick: () => showPath(sel[0], sel[1]) }, 'Show how they connect'));
+    if (sel.length === 2) actions.append(h('button', { class: 'primary', onclick: () => showPath(sel[0], sel[1]) }, 'Show how they connect'),
+      h('button', { title: 'Draw a link between the two yourself', onclick: () => { const label = prompt(`How is ${sel[0].data('display')} related to ${sel[1].data('display')}?`, 'associated with'); if (label && addEdge(sel[0].id(), sel[1].id(), label.slice(0, 60), 'manual')) afterChange(); } }, 'Link them…'));
     actions.append(
       h('button', { onclick: () => sel.forEach((n) => runAll(n.id())) }, 'Run all searches'),
       h('button', { class: 'danger', onclick: () => removeNodes(sel) }, 'Delete'));
@@ -529,15 +536,61 @@ function renderDetails() {
     h('button', { disabled: !mods.length, onclick: () => discover(key, 2), title: 'Run all searches here, then again on everything they find' }, 'Discover 2 levels'),
     h('button', { class: 'danger', onclick: () => removeNodes(n) }, 'Delete')));
 
+  const hits = xref[key];
+  if (hits?.length) {
+    box.append(h('h2', {}, 'Also in other investigations'));
+    for (const hit of hits) {
+      box.append(h('div', { class: 'xref' }, h('div', {}, h('b', {}, hit.name), ` · ${hit.links} link${hit.links === 1 ? '' : 's'} there`),
+        hit.notes ? h('div', { class: 'muted' }, hit.notes) : null,
+        h('div', { class: 'btn-row' },
+          h('button', { title: 'Copy what that investigation links to this entity into this graph', onclick: () => importAround(hit, key) }, 'Bring links here'),
+          h('button', { onclick: () => openWorkspace(hit.id).then(() => node(key).length && focusNode(node(key))) }, 'Open it'))));
+    }
+  }
+
+  const setProp = (k, v) => {
+    const next = { ...n.data('props') };
+    if (v === undefined) delete next[k]; else next[k] = v;
+    n.data('props', next);
+    n.toggleClass('guess', !!next.confidence);
+    afterChange();
+    renderDetails();
+  };
   const props = Object.entries(d.props).filter(([k, v]) => k !== 'confidence' && v != null && v !== '');
+  box.append(h('h2', {}, 'Known facts'));
   if (props.length) {
     const dl = h('dl', { class: 'props' });
     for (const [k, v] of props) {
-      const s = String(v);
-      dl.append(h('dt', {}, k.replace(/_/g, ' ')), h('dd', {}, /^https?:\/\/\S+$/.test(s) ? extLink(s, s.replace(/^https?:\/\/(www\.)?/, '')) : s));
+      const str = String(v);
+      dl.append(h('dt', {}, k.replace(/_/g, ' ')), h('dd', {},
+        /^https?:\/\/\S+$/.test(str) ? extLink(str, str.replace(/^https?:\/\/(www\.)?/, '')) : h('span', {}, str),
+        h('button', { class: 'x-btn', title: `Remove “${k.replace(/_/g, ' ')}”`, 'aria-label': `Remove ${k}`, onclick: () => setProp(k, undefined) }, '×')));
     }
-    box.append(h('h2', {}, 'Known facts'), dl);
+    box.append(dl);
   }
+  if (d.props.confidence) box.append(h('div', { class: 'd-actions', style: 'margin-top:8px' }, h('button', { onclick: () => setProp('confidence', undefined), title: 'You checked it: treat this entity as confirmed from now on' }, 'Mark as verified')));
+  const factKey = h('input', { type: 'text', placeholder: 'fact (e.g. role)', 'aria-label': 'Fact name', list: 'fact-names' });
+  const factVal = h('input', { type: 'text', placeholder: 'value', 'aria-label': 'Fact value' });
+  box.append(h('form', { class: 'mini-form', onsubmit: (e) => {
+    e.preventDefault();
+    const k = factKey.value.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, '');
+    if (k && factVal.value.trim() && k !== 'confidence') setProp(k, factVal.value.trim());
+  } }, factKey, factVal, h('button', { type: 'submit' }, 'Add fact'),
+  h('datalist', { id: 'fact-names' }, ['role', 'title', 'employer', 'city', 'date_of_birth', 'nickname', 'description', 'nationality', 'language'].map((x) => h('option', { value: x })))));
+
+  // attach further entities by hand; searches and templates then use them like anything found automatically
+  const DEFAULT_REL = { email: 'email', phone: 'phone', photo: 'photo', profile: 'profile', username: 'handle', organization: 'works at', location: 'located in', person: 'associated with', domain: 'website', url: 'mentioned in', technology: 'uses' };
+  const linkVal = h('input', { type: 'text', placeholder: 'e-mail, phone, profile URL, employer…', 'aria-label': 'Value to link', spellcheck: 'false' });
+  const linkType = h('select', { 'aria-label': 'Type of the linked entity' }, h('option', { value: 'auto' }, 'Auto-detect'), Object.entries(TYPES).map(([k, t]) => h('option', { value: k }, t.label)));
+  const linkRel = h('input', { type: 'text', placeholder: 'relation (optional)', 'aria-label': 'Relation' });
+  box.append(h('h2', {}, 'Add linked information'), h('form', { class: 'mini-form', onsubmit: (e) => {
+    e.preventDefault();
+    const v = linkVal.value.trim();
+    if (!v) return;
+    const type = linkType.value === 'auto' ? detectType(v) : linkType.value;
+    linkTo(key, { type, value: v }, linkRel.value.trim() || DEFAULT_REL[type] || 'related to');
+  } }, linkVal, linkType, linkRel, h('button', { type: 'submit' }, 'Link'),
+  h('button', { type: 'button', title: 'Add a picture from your computer to this entity', onclick: () => { attachTo = key; $('#file-attach').click(); } }, 'Attach photo…')));
 
   if (mods.length) {
     box.append(h('h2', {}, 'Searches'));
@@ -574,12 +627,65 @@ function renderDetails() {
   if (focusedNotes) { const t = $('#notes'); t.focus(); t.setSelectionRange(caret, caret); }
 }
 
+let xref = {}; // node key → other investigations that contain the same entity
+let attachTo = null;
+let xrefTimer = null;
+
+/** Ask the shared index which entities of this graph also appear in other investigations. */
+async function refreshXref() {
+  if (!ws) return;
+  try {
+    const keys = cy.nodes().filter((n) => !n.data('props').confidence).map((n) => n.id());
+    const before = JSON.stringify(Object.keys(xref).sort());
+    xref = keys.length ? (await api('/api/xref', { method: 'POST', body: { workspace: ws.id, keys } })).hits : {};
+    cy.batch(() => cy.nodes().forEach((n) => n.toggleClass('xref', !!xref[n.id()])));
+    if (before !== JSON.stringify(Object.keys(xref).sort())) renderDetails();
+  } catch { /* the index is a convenience; the graph works without it */ }
+}
+const scheduleXref = () => { clearTimeout(xrefTimer); xrefTimer = setTimeout(refreshXref, 1500); };
+
+/** Copy an entity's direct links from another investigation into this one. */
+async function importAround(hit, key) {
+  try {
+    const data = await api(`/api/workspaces/${hit.id}/around?key=${encodeURIComponent(key)}`);
+    const added = [];
+    cy.batch(() => {
+      for (const n of data.nodes) { const r = upsert(n, node(key).position(), 'xref'); if (r?.isNew) added.push(r.key); }
+      for (const e of data.edges) addEdge(e.source, e.target, e.label, e.module);
+    });
+    afterChange(added);
+    log(`Brought ${data.nodes.length - 1} linked entities over from “${data.name}” (${added.length} new here).`);
+  } catch (e) { log(`Could not read the other investigation: ${e.message}`, 'err'); }
+}
+
+/** Attach an entity to an existing node by hand. */
+function linkTo(key, ent, rel) {
+  const r = upsert(ent, node(key).position(), 'manual');
+  if (!r) { log(`"${ent.value}" is not a valid ${TYPES[ent.type].label.toLowerCase()}.`, 'err'); return null; }
+  addEdge(key, r.key, rel, 'manual');
+  afterChange(r.isNew ? [r.key] : []);
+  renderDetails();
+  return r.key;
+}
+
+async function uploadPhoto(file) {
+  const res = await fetch('/api/upload', { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: file });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error);
+  return j.value;
+}
+
 /** Nothing selected: everything found so far as a sorted list, people first, each with its next step. */
 function renderOverview(box) {
   const byName = (a, b) => (a.data('props').confidence ? 1 : 0) - (b.data('props').confidence ? 1 : 0) || a.data('display').localeCompare(b.data('display'));
   const people = cy.nodes('[type = "person"]').not('.hidden').sort(byName);
   const personTpl = TEMPLATES.find((t) => t.id === 'person');
   box.append(h('div', { class: 'd-head' }, h('div', {}, h('div', { class: 'd-value' }, 'Overview'), h('div', { class: 'd-label' }, 'Everything found so far. Click a name to open it.'))));
+  const shared = cy.nodes('.xref').not('.hidden').sort(byName);
+  if (shared.length) {
+    box.append(h('h2', {}, `Seen in other investigations (${shared.length})`));
+    shared.forEach((n) => box.append(connRow(n, xref[n.id()].map((x) => x.name).join(', '))));
+  }
   if (people.length) {
     const sure = people.filter((n) => !n.data('props').confidence);
     box.append(h('h2', {}, `People (${people.length})`));
@@ -762,7 +868,9 @@ async function openWorkspace(id) {
   ws = { id: w.id, name: w.name };
   try { localStorage.setItem('communis.ws', w.id); } catch { /* storage unavailable */ }
   $('#ws-select').value = w.id;
+  xref = {};
   loadGraph(w);
+  refreshXref();
 }
 
 async function createWorkspace(name, data = {}) {
@@ -903,10 +1011,17 @@ $('#file-photo').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!f) return;
   try {
-    const res = await fetch('/api/upload', { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: f });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error);
-    const key = addManual('photo', j.value, { label: f.name });
+    const key = addManual('photo', await uploadPhoto(f), { label: f.name });
+    if (key) runModule(key, 'photo_analyze');
+  } catch (err) { log(`Upload failed: ${err.message}`, 'err'); }
+});
+$('#file-attach').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f || !attachTo || !node(attachTo).length) return;
+  try {
+    const owner = node(attachTo).data('display');
+    const key = linkTo(attachTo, { type: 'photo', value: await uploadPhoto(f), label: `${owner} (${f.name})` }, 'photo');
     if (key) runModule(key, 'photo_analyze');
   } catch (err) { log(`Upload failed: ${err.message}`, 'err'); }
 });
@@ -929,11 +1044,14 @@ $('#btn-settings').addEventListener('click', async () => {
   const s = await api('/api/settings');
   $('#set-github').value = '';
   $('#set-github-state').textContent = s.githubToken ? 'A token is saved. Enter a new one to replace it.' : 'No token saved.';
+  $('#set-news-sites').value = s.newsSites || '';
+  $('#set-news-region').value = s.newsRegion || '';
   $('#dlg-settings').showModal();
 });
 $('#dlg-settings').addEventListener('close', async (e) => {
-  const v = $('#set-github').value.trim();
-  if (e.target.returnValue === 'ok' && v) { await api('/api/settings', { method: 'PUT', body: { githubToken: v } }); log('Settings saved.'); }
+  if (e.target.returnValue !== 'ok') return;
+  await api('/api/settings', { method: 'PUT', body: { githubToken: $('#set-github').value.trim(), newsSites: $('#set-news-sites').value, newsRegion: $('#set-news-region').value || 'US:en' } });
+  log('Settings saved.');
 });
 
 $('#link-demo').addEventListener('click', async (e) => {

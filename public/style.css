@@ -176,3 +176,17 @@ dialog.wide { width: min(760px, 94vw); }
 .ov-group summary .n { margin-left: auto; color: var(--muted); }
 .retype { display: flex; align-items: center; gap: 8px; color: var(--muted); margin-top: 16px; }
 .retype select { flex: 1; color: var(--text); }
+
+.props dd { display: flex; gap: 6px; align-items: flex-start; }
+.props dd > span, .props dd > a { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.x-btn { border: 0; background: none; color: var(--muted); padding: 0 4px; line-height: 1.2; visibility: hidden; }
+.props dd:hover .x-btn, .x-btn:focus-visible { visibility: visible; }
+.x-btn:hover { color: var(--danger); background: none; }
+.mini-form { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.mini-form input, .mini-form select { flex: 1 1 90px; min-width: 0; }
+.mini-form button { flex: none; }
+.xref { border: 1px solid #5a4a1c; background: #1d1a10; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+.xref b { color: #ffd166; }
+.xref .btn-row { margin-top: 6px; }
+.xref .muted { font-size: 12px; }
+.mini-form:has(select) input:first-child { flex-basis: 100%; }

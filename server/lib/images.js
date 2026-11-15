@@ -81,7 +81,7 @@ function parseTiff(t) {
 }
 
 /** Decode to RGBA. Only JPEG and PNG are supported. */
-function decode(buf, mime) {
+export function decodeImage(buf, mime) {
   if (mime === 'image/jpeg') return jpeg.decode(buf, { useTArray: true, maxMemoryUsageInMB: 512, maxResolutionInMP: 60 });
   if (mime === 'image/png') return PNG.sync.read(buf);
   return null;
@@ -94,7 +94,7 @@ function decode(buf, mime) {
 export function fingerprint(buf, mime) {
   const out = { sha256: createHash('sha256').update(buf).digest('hex') };
   let img;
-  try { img = decode(buf, mime); } catch { return out; }
+  try { img = decodeImage(buf, mime); } catch { return out; }
   if (!img?.width) return out;
   out.width = img.width;
   out.height = img.height;

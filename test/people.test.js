@@ -118,3 +118,38 @@ test('section headings and company names are not people (German site)', async ()
   assert.equal(persons['Roland Huemer'].confidence, undefined);
   assert.equal(persons['Stefan Reisinger'].role, 'Leiter Vertrieb');
 });
+
+test('titles, imprint lines and company facts (Austrian-style site)', async () => {
+  const { parseName, peopleInText, companyFacts, blockText } = await import('../server/lib/people.js');
+  assert.deepEqual(parseName('Mag. Roland Huemer, MBA'), { name: 'Roland Huemer', title: 'Mag. MBA' });
+  assert.deepEqual(parseName('DI (FH) Anna Berger'), { name: 'Anna Berger', title: 'DI (FH)' });
+  assert.deepEqual(parseName('Univ.-Prof. Dr. Karl Maier'), { name: 'Karl Maier', title: 'Univ.-Prof. Dr.' });
+  assert.equal(parseName('Dr.in Eva Novak').name, 'Eva Novak');
+  const html = `<html><body><h1>Impressum</h1><div><p><strong>Nordwind Pharma GmbH</strong><br>Feldgasse 19, 4600 Wels<br>Österreich</p>
+    <p>Geschäftsführung: Mag. Roland Huemer, DI Florian Fellinger und Dr. Petra Lang, MBA</p>
+    <p>Prokurist: Stefan Reisinger</p>
+    <p>Firmenbuchnummer: FN 123456 a<br>Firmenbuchgericht: Landesgericht Wels<br>UID-Nr.: ATU 12345678</p>
+    <p>Unser Vertrieb erreicht Sie unter office@nordwind-test.at. Ihre Ansprechpartnerin im Außendienst ist Marlene Pramhaas, Gebietsleiterin Oberösterreich.</p>
+    <p>Qualitätssicherung und Produkte seit 1949.</p></div></body></html>`;
+  const text = blockText(html);
+  const people = Object.fromEntries(peopleInText(text).map((p) => [p.name, p]));
+  assert.deepEqual(Object.keys(people).sort(), ['Florian Fellinger', 'Marlene Pramhaas', 'Petra Lang', 'Roland Huemer', 'Stefan Reisinger']);
+  assert.equal(people['Roland Huemer'].role, 'Geschäftsführung');
+  assert.equal(people['Roland Huemer'].title, 'Mag.');
+  assert.equal(people['Petra Lang'].title, 'Dr. MBA');
+  assert.equal(people['Stefan Reisinger'].role, 'Prokurist');
+  assert.equal(people['Marlene Pramhaas'].role, 'Gebietsleiterin Oberösterreich');
+  assert.deepEqual(companyFacts(text), { vat_id: 'ATU 12345678', company_register: '123456 a', register_court: 'Landesgericht Wels', legal_form: 'GmbH', address: 'Feldgasse 19, 4600 Wels' });
+
+  const http = { async raw(url) {
+    const h = { '/': '<html><head><meta property="og:site_name" content="Nordwind Pharma"></head><body><a href="/impressum">Impressum</a></body></html>', '/impressum': html }[new URL(url).pathname];
+    if (h == null) throw new Error('404');
+    return page(url, h);
+  } };
+  const r = await runModule(mods.get('site_people'), { type: 'domain', value: 'nordwind-pharma.test' }, {}, http);
+  const by = Object.fromEntries(r.entities.map((e) => [e.key, e]));
+  assert.equal(by['person:roland huemer'].props.title, 'Mag.');
+  assert.equal(by['organization:nordwind pharma'].props.vat_id, 'ATU 12345678');
+  assert.ok(by['location:feldgasse 19, 4600 wels']);
+  assert.equal(r.entities.filter((e) => e.type === 'person').length, 5);
+});

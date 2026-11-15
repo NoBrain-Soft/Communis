@@ -47,8 +47,10 @@ const FIRST_NAMES = new Set(('aaron abdul abigail adam adrian adriana agnes ahme
 /** Is the first word a given name we recognise? Used only as supporting evidence, never to reject. */
 export const knownFirstName = (name) => FIRST_NAMES.has(String(name).trim().split(/\s+/)[0].toLowerCase());
 const PARTICLE = /^(de|del|della|di|da|dos|van|von|der|den|la|le|du|bin|ibn|al|el|ter|ten|zu|y)$/i;
-const TITLE = /^(dr|prof|professor|mr|mrs|ms|miss|mx|sir|dame|ing|dipl|mag|rev|hon|herr|frau|mme|m|sr|sra)\.?$/i;
-const ROLE = /\b(ceo|cto|cfo|coo|cmo|cio|ciso|chief|founder|co-?founder|director|manager|head of|president|vice|vp|partner|principal|engineer|developer|designer|architect|professor|lecturer|researcher|scientist|attorney|lawyer|counsel|doctor|physician|nurse|officer|lead|consultant|analyst|editor|journalist|reporter|writer|owner|chair|chairman|chairwoman|secretary|treasurer|advisor|adviser|associate|assistant|specialist|coordinator|administrator|executive|accountant|recruiter|sales|marketing|geschäftsführer|geschäftsführerin|leiter|leiterin|inhaber|inhaberin|vorstand|directeur|directrice|gérant|responsable|gerente|direttore)\b/i;
+// honorifics and academic titles that precede a name (German/Austrian style included: Mag.a, Dr.in, DI (FH), KommR ...)
+const TITLE = /^(?:(?:univ|ao|o|priv|hon|ass)\.?-?)?(dr|ddr|dddr|prof|professor|doz|mr|mrs|ms|miss|mx|sir|dame|ing|dipl|di|dkfm|mag|mmag|rev|hon|herr|frau|mme|m|sr|sra|kr|kommr|tzt|vet|med|iur|jur|rer|nat|phil|techn|pharm|dipl\.?-?(?:ing|kfm|kffr|bw|vw|päd|tzt|psych|inf))(?:\.?(?:a|in|ª))?\.?$|^\((?:fh|ba)\)$/i;
+const POSTNOMINAL = /^(mba|emba|msc|m\.sc\.?|bsc|b\.sc\.?|ma|m\.a\.?|ba|b\.a\.?|phd|ph\.d\.?|ll\.?m\.?|mas|mbl|mim|cfa|cpa|md|meng|beng|bakk\.?|akad\.?)$/i;
+const ROLE = /\b(ceo|cto|cfo|coo|cmo|cio|ciso|chief|founder|co-?founder|director|manager|head of|president|vice|vp|partner|principal|engineer|developer|designer|architect|professor|lecturer|researcher|scientist|attorney|lawyer|counsel|doctor|physician|nurse|officer|lead|consultant|analyst|editor|journalist|reporter|writer|owner|chair|chairman|chairwoman|secretary|treasurer|advisor|adviser|associate|assistant|specialist|coordinator|administrator|executive|accountant|recruiter|sales|marketing|geschäftsführer|geschäftsführerin|leiter|leiterin|inhaber|inhaberin|vorstand|directeur|directrice|gérant|responsable|gerente|direttore|key account|außendienst|innendienst|qualitätssicherung|regulatory affairs|medical affairs|compliance|controlling|hr)\b|(leiter|leiterin|leitung|führer|führerin|managerin?|direktor|direktorin|berater|beraterin|betreuer|betreuerin|assistenz|assistent|referent|beauftragte|prokurist|sprecher|redakteur|tierarzt|tierärztin|apotheker|techniker|entwickler|ingenieur|sachbearbeiter|buchhalter|sekretär|pharmazeut|wissenschaftler|obmann|obfrau|präsident|vorsitzende)/i;
 const NAME_CLASS = /name|person|member|author|staff|team|people|profile|employee|speaker|founder|bio|vcard/i;
 export const PEOPLE_PAGE = /team|people|staff|about|contact|impressum|imprint|leadership|management|board|founder|who-we-are|company|kontakt|ueber-uns|uber-uns|equipo|equipe|nosotros|partners|attorneys|lawyers|doctors|faculty|directory|authors?|experts|advisors|crew|employees|mitarbeiter/i;
 
@@ -58,21 +60,85 @@ const decode = (s) => s.replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/
 const textOf = (html) => decode(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 
 /** "Dr. Jane van Doe, PhD" → "Jane van Doe"; returns '' when the text does not look like a person's name. */
-export function personName(raw) {
-  let s = String(raw || '').replace(/\s+/g, ' ').trim().split(/\s*[,|–—(]\s*/)[0];
-  if (s.length < 5 || s.length > 45 || /[\d@:/!?&]/.test(s) || ROLE.test(s)) return '';
-  let tokens = s.split(' ');
-  while (tokens.length && TITLE.test(tokens[0])) tokens.shift();
-  if (tokens.length < 2 || tokens.length > 4) return '';
+export function parseName(raw) {
+  const none = { name: '', title: '' };
+  const fh = String(raw || '').match(/\((FH|BA)\)/i);
+  const parts = String(raw || '').replace(/\((FH|BA)\)/gi, ' ').replace(/\s+/g, ' ').trim().split(/\s*[,|–—(]\s*/);
+  const s = parts[0];
+  if (s.length < 5 || s.length > 60 || /[\d@:/!?&]/.test(s)) return none;
+  const tokens = s.split(' ');
+  const titles = [];
+  while (tokens.length && TITLE.test(tokens[0])) titles.push(tokens.shift());
+  while (tokens.length > 2 && POSTNOMINAL.test(tokens[tokens.length - 1])) titles.push(tokens.pop());
+  for (const extra of parts.slice(1)) if (POSTNOMINAL.test(extra.replace(/\)$/, '').trim())) titles.push(extra.replace(/\)$/, '').trim());
+  const rest = tokens.join(' ');
+  if (tokens.length < 2 || tokens.length > 4 || rest.length > 45 || ROLE.test(rest)) return none;
   let real = 0;
   for (const t of tokens) {
     if (PARTICLE.test(t)) continue;
     if (/^\p{Lu}\.$/u.test(t)) continue; // middle initial
-    if (!/^\p{Lu}[\p{Ll}'’-]+(\p{Lu}[\p{Ll}]+)?$/u.test(t)) return '';
-    if (STOP.has(t.toLowerCase()) || COMPANY.test(t) || t.length > 16) return '';
+    if (!/^\p{Lu}[\p{Ll}'’-]+(\p{Lu}[\p{Ll}]+)?$/u.test(t)) return none;
+    if (STOP.has(t.toLowerCase()) || COMPANY.test(t) || t.length > 16) return none;
     real++;
   }
-  return real >= 2 ? tokens.join(' ') : '';
+  const title = titles.join(' ');
+  return real >= 2 ? { name: rest, title: fh && title ? title.replace(/^(\S+)/, `$1 (${fh[1].toUpperCase()})`) : title } : none;
+}
+
+/** "Dr. Jane van Doe, PhD" → "Jane van Doe"; returns '' when the text does not look like a person's name. */
+export const personName = (raw) => parseName(raw).name;
+
+const NAME_RE = "\\p{Lu}[\\p{Ll}'’-]+(?:[ \\u00a0]+(?:(?:de|del|van|von|der|den|la|le|du|zu|di|da)[ \\u00a0]+)*\\p{Lu}[\\p{Ll}'’-]+){1,2}";
+const TITLE_RE = '(?:(?:Univ\\.-?|Priv\\.-?|Ao\\.\\s?|Hon\\.-?)?Prof\\.|Doz\\.|MMag\\.|Mag\\.(?:a|ª)?|DDr\\.|Dr\\.(?:in)?(?:\\s(?:med|iur|jur|rer|nat|phil|techn|vet)\\.){0,2}|Dipl\\.-?(?:Ing|Kfm|Kffr|Bw|Vw|Tzt|Inf)\\.?(?:\\s?\\(FH\\))?|DI(?:\\s?\\(FH\\))?|Dkfm\\.|Ing\\.|KR|KommR|Tzt\\.)';
+const POST_RE = '(?:,?\\s*(?:MBA|EMBA|MSc|M\\.Sc\\.|BSc|B\\.Sc\\.|MA|BA|PhD|Ph\\.D\\.|LL\\.M\\.|MAS|MBL|MIM|CFA|Bakk\\.))*';
+const LABELS = 'Geschäftsführ(?:er|erin|ung|ende[rn]?)(?:\\s+Gesellschafter(?:in)?)?|Geschäftsleitung|Vorstand(?:svorsitzende[r]?|smitglied(?:er)?)?|Inhaber(?:in)?|Prokurist(?:in|en)?|Vertretungsberechtigt(?:e[rn]?)?(?:\\s+Geschäftsführer(?:in)?)?|(?:Inhaltlich\\s+)?[Vv]erantwortlich(?:e[r]?)?(?:\\s+(?:für\\s+den\\s+Inhalt|im\\s+Sinne[^:\\n]{0,40}))?|Aufsichtsrat(?:svorsitzende[r]?)?|Gesellschafter(?:in)?|Herausgeber(?:in)?|Chefredakt(?:eur|eurin|ion)|Redaktion|Ansprechpartner(?:in)?|Datenschutzbeauftragte[r]?|Obmann|Obfrau|Präsident(?:in)?|CEO|CFO|CTO|COO|Managing\\s+Directors?|Directors?|Owner|Founder|Editor(?:-in-[Cc]hief)?|Publisher|Contact\\s+person|Data\\s+protection\\s+officer|Represented\\s+by|Vertreten\\s+durch|Gérant|Directeur(?:\\s+de\\s+la\\s+publication)?';
+
+/** HTML to text that keeps one line per block element, so "Label: value" pairs stay together. */
+export function blockText(html) {
+  return decode(html.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<(script|style|noscript|svg|head)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<(?:br|\/p|\/div|\/li|\/h[1-6]|\/td|\/tr|\/dd|\/dt|\/section|\/address)\b[^>]*>/gi, '\n').replace(/<[^>]+>/g, ' '))
+    .split('\n').map((l) => l.replace(/[ \t\u00a0]+/g, ' ').trim()).filter(Boolean).join('\n');
+}
+
+/**
+ * People named in running text rather than in "cards": imprint lines ("Geschäftsführer: Mag. Jane Doe, John Roe"),
+ * names carrying an academic title, and "Name, Role" / "Name (Role)" pairs.
+ */
+export function peopleInText(text) {
+  const found = new Map();
+  const put = (raw, role, sure) => {
+    const { name, title } = parseName(raw);
+    if (!name) return;
+    const k = fold(name);
+    const p = found.get(k) || { name, title: '', role: '', sure: false };
+    p.title ||= title; p.role ||= role || ''; p.sure ||= sure;
+    found.set(k, p);
+  };
+  for (const m of text.matchAll(new RegExp(`(?:^|[\\n(;])\\s*(${LABELS})\\s*(?::|\\n)\\s*([^\\n]{4,200})`, 'gu'))) {
+    const role = m[1].replace(/\s+/g, ' ').replace(/^Vertreten durch$|^Represented by$/i, 'Representative');
+    for (const piece of m[2].split(/\s*(?:;|\/|&|\bund\b|\band\b|\bsowie\b|,(?!\s*(?:MBA|MSc|BSc|MA|BA|PhD|LL|MAS|MBL)))\s*/)) put(piece, role, true);
+  }
+  for (const m of text.matchAll(new RegExp(`((?:${TITLE_RE}\\s*){1,4})(${NAME_RE})(${POST_RE})`, 'gu'))) put(`${m[1]} ${m[2]}${m[3] || ''}`, '', true);
+  for (const m of text.matchAll(new RegExp(`(${NAME_RE})(${POST_RE})\\s*(?:,|\\(|–|—| - |\\|)\\s*([^\\n,;()|]{3,60})`, 'gu'))) {
+    const role = m[3].trim();
+    if (ROLE.test(role) && !parseName(role).name && knownFirstName(m[1])) put(`${m[1]}${m[2] || ''}`, role.replace(/[.:]$/, ''), true);
+  }
+  for (const m of text.matchAll(new RegExp(`(?:^|\\n)\\s*(CEO|CFO|CTO|COO|Geschäftsführer(?:in)?|Prokurist(?:in)?|Vorstand)\\s+((?:${TITLE_RE}\\s*){0,3}${NAME_RE})`, 'gu'))) put(m[2], m[1], true);
+  return [...found.values()];
+}
+
+/** Company facts usually printed in an imprint / legal notice. */
+export function companyFacts(text) {
+  const pick = (re) => text.match(re)?.[1]?.replace(/\s+/g, ' ').trim();
+  const facts = {
+    vat_id: pick(/(?:UID(?:-?\s?Nr\.?|-?Nummer)?|USt\.?-?\s?Id(?:ent)?(?:-?\s?Nr)?\.?|Umsatzsteuer-?Id[^:\n]{0,25}|VAT(?:\s(?:ID|No\.?|number|Reg(?:istration)?(?:\sNo\.?)?))?)\s*[:.]?\s*((?:ATU|DE|CHE|GB|FR|IT|NL|ES|BE|PL|CZ|HU|SK|SI)[ -]?[0-9][0-9A-Z. -]{6,13}[0-9A-Z])(?![0-9A-Za-z])/i),
+    company_register: pick(/(?:Firmenbuch(?:nummer|-?\s?Nr\.?)?|\bFN)\s*[:.]?\s*(?:FN\s*)?(\d{3,6}\s?[a-z])\b/i) || pick(/\b(HR[AB]\s?\d{3,7}(?:\s?[A-Z])?)\b/) || pick(/(?:Company (?:No\.?|number)|Registered (?:No\.?|number))\s*[:.]?\s*([A-Z]{0,2}\d{6,8})/i),
+    register_court: pick(/(?:Firmenbuchgericht|Registergericht|Handelsgericht|Amtsgericht|Landesgericht)\s*[:.]?\s*([^\n,;]{3,50})/i),
+    legal_form: pick(/\b(GmbH\s?&\s?Co\.?\s?KG|GesmbH|GmbH|AG|KG|OG|e\.U\.|SE|Ltd\.?|LLC|Inc\.?|S\.A\.|B\.V\.)(?=[\s,.\n]|$)/),
+  };
+  const a = text.match(/([\p{Lu}][\p{L}.\- ]{2,40}?(?:straße|strasse|str\.|gasse|weg|platz|allee|ring|zeile|kai|street|road|avenue|lane)\s*\d+[a-z]?(?:[-\/]\d+)?)\s*[,\n]\s*(?:[AD]-\s?)?(\d{4,5})\s+([\p{Lu}][\p{L} .\/-]{2,30})/u);
+  if (a) facts.address = `${a[1].trim()}, ${a[2]} ${a[3].trim().split('\n')[0]}`;
+  return Object.fromEntries(Object.entries(facts).filter(([, v]) => v));
 }
 
 function contactsIn(html, base) {
@@ -103,8 +169,9 @@ export function extractPeople(html, pageUrl) {
   const people = new Map();
   const put = (name, data) => {
     const k = fold(name);
-    const p = people.get(k) || { name, role: '', emails: [], phones: [], profiles: [], image: null, sure: false };
+    const p = people.get(k) || { name, title: '', role: '', emails: [], phones: [], profiles: [], image: null, sure: false };
     p.role ||= data.role || '';
+    p.title ||= data.title || '';
     p.image ||= data.image || null;
     p.sure ||= !!data.sure;
     p.emails.push(...(data.emails || []));
@@ -139,8 +206,10 @@ export function extractPeople(html, pageUrl) {
     for (const m of body.matchAll(re)) {
       const hinted = NAME_CLASS.test(m[2].match(/class\s*=\s*["']([^"']*)["']/i)?.[1] || '');
       if (!heading && (!hinted || /<(div|p|li|h[1-6]|ul|table)\b/i.test(m[3]))) continue;
-      const name = personName(textOf(m[3]));
-      if (name) cands.push({ name, start: m.index, end: m.index + m[0].length, hinted, heading: /^h[1-6]$/i.test(m[1]) });
+      const raw = textOf(m[3]);
+      const { name, title } = parseName(raw);
+      const inline = raw.split(/\s*[,|–—(]\s*/).slice(1).map((x) => x.replace(/\)$/, '').trim()).find((x) => x.length <= 60 && ROLE.test(x));
+      if (name) cands.push({ name, title, inline, start: m.index, end: m.index + m[0].length, hinted, heading: /^h[1-6]$/i.test(m[1]) });
     }
   };
   scan(/<(h[1-6]|strong|b|dt|figcaption)\b([^>]*)>([\s\S]{2,240}?)<\/\1>/gi, true);
@@ -160,7 +229,7 @@ export function extractPeople(html, pageUrl) {
     const before = body.slice(Math.max(prev ? prev.end : 0, c.start - 700), c.start);
     const contacts = contactsIn(seg, pageUrl);
     const pieces = seg.slice(0, 600).replace(/<[^>]+>/g, '\n').split('\n').map((t) => decode(t).replace(/\s+/g, ' ').trim()).filter(Boolean);
-    const role = pieces.slice(0, 3).find((t) => t.length >= 3 && t.length <= 60 && ROLE.test(t)) || '';
+    const role = c.inline || pieces.slice(0, 3).find((t) => t.length >= 3 && t.length <= 60 && ROLE.test(t) && !parseName(t).name) || '';
     const beforeImgs = [...before.matchAll(/<img\b[^>]*>/gi)];
     const imgBefore = beforeImgs.length ? imageIn(beforeImgs[beforeImgs.length - 1][0], pageUrl) : null;
     // cards put the portrait either above or below the name; the first card tells which
@@ -168,15 +237,18 @@ export function extractPeople(html, pageUrl) {
     const image = portraitFirst ? imgBefore : imageIn(seg.slice(0, 500), pageUrl);
     // Evidence that this heading is a person and not a section title: a recognisable given name or a "name"
     // class, a job title right below it, or an address that spells the name.
-    const nameish = c.hinted || knownFirstName(c.name);
+    const nameish = c.hinted || !!c.title || knownFirstName(c.name);
     const ownEmail = contacts.emails.some((e) => emailNameMatch(e, c.name));
     const hasContact = contacts.emails.length || contacts.phones.length || contacts.profiles.length;
     const corroborated = ownEmail || (nameish && (!!role || hasContact || onPeoplePage));
     if (!corroborated && !(role && (hasContact || onPeoplePage)) && !(nameish && c.heading)) return;
     // a lone e-mail far from the name is more likely the site's general address than this person's
     if (!role && !c.hinted && contacts.emails.length > 2) contacts.emails = [];
-    put(c.name, { ...contacts, role, image: role || c.hinted || onPeoplePage ? image : null, sure: corroborated });
+    put(c.name, { ...contacts, title: c.title, role, image: role || c.hinted || onPeoplePage ? image : null, sure: corroborated });
   });
+
+  // 3. names in running text: imprint lines, academic titles, "Name, Role"
+  for (const t of peopleInText(blockText(html))) put(t.name, { title: t.title, role: t.role, sure: t.sure });
 
   return [...people.values()].map((p) => ({ ...p, emails: [...new Set(p.emails)].slice(0, 3), phones: [...new Set(p.phones)].slice(0, 3),
     profiles: [...new Map(p.profiles.map((x) => [x.url.toLowerCase(), x])).values()].slice(0, 5) }));

@@ -57,7 +57,10 @@ export default [
       for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
         const at = (n) => m[0].match(new RegExp(`\\b${n}\\s*=\\s*["']([^"']*)["']`, 'i'))?.[1];
         if (+at('width') > 0 && +at('width') < 60) continue;
-        add(at('data-src') || at('data-lazy-src') || at('src') || (at('srcset') || '').split(/[ ,]/)[0], at('alt'));
+        // lazy-loading pages keep a placeholder in src; the real picture is in data-src / data-srcset (largest first or by width)
+        const set = (at('data-srcset') || at('srcset') || '').split(',').map((c) => c.trim().split(/\s+/)).filter((c) => c[0]).sort((x, y) => (parseInt(y[1], 10) || 0) - (parseInt(x[1], 10) || 0));
+        const mid = set.find((c) => (parseInt(c[1], 10) || 0) <= 1000) || set[0];
+        add(at('data-src') || at('data-lazy-src') || (mid && mid[0]) || at('src'), at('alt') || at('title'));
       }
       for (const m of html.matchAll(/<meta[^>]+(?:og:image|twitter:image)[^>]*content\s*=\s*["']([^"']+)["']/gi)) add(m[1], '');
       const list = [...urls.entries()].slice(0, 16);
@@ -70,7 +73,7 @@ export default [
         const { faces, img: px } = detectFaces(img.buf, img.mime);
         if (!faces.length || !px) return;
         const fp = fingerprint(img.buf, img.mime);
-        const label = alt.trim().slice(0, 60) || (faces.length > 1 ? `Group picture (${faces.length} faces)` : 'Portrait');
+        const label = alt.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#0?39;/g, "'").trim().slice(0, 60) || (faces.length > 1 ? `Group picture (${faces.length} faces)` : 'Portrait');
         entities.push({ type: 'photo', value: u, label, rel: 'picture with faces', props: { faces: faces.length, alt_text: alt.trim() || undefined, width: px.width, height: px.height, sha256: fp.sha256, phash: fp.phash } });
         entities.push(...await faceEntities(px, faces, `photo:${u}`, 'Face'));
       };

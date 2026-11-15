@@ -44,11 +44,11 @@ export function registrableDomain(host) {
   return MULTI_SUFFIX.has(p.slice(-2).join('.')) ? p.slice(-3).join('.') : p.slice(-2).join('.');
 }
 
-function cleanUrl(v) {
+function cleanUrl(v, keepHash = false) {
   try {
     const u = new URL(v);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
-    u.hash = '';
+    if (!keepHash) u.hash = '';
     return u.href;
   } catch { return ''; }
 }
@@ -65,7 +65,7 @@ export function normalize(type, raw) {
     case 'ip': v = v.toLowerCase().replace(/^\[|\]$/g, ''); return isIP(v) ? v : '';
     case 'netblock': { const [a, m] = v.toLowerCase().split('/'); return isIP(a) && /^\d{1,3}$/.test(m || '') ? `${a}/${m}` : ''; }
     case 'asn': { const m = v.match(/^(?:as)?(\d{1,10})$/i); return m ? `AS${m[1]}` : ''; }
-    case 'url': return cleanUrl(v);
+    case 'url': return cleanUrl(v, true); // an anchor can address one item on a page (e.g. a press release)
     case 'profile': return cleanUrl(v).replace(/\/$/, '');
     case 'photo': return /^upload:\/\/[a-z0-9.]+$/.test(v) ? v : cleanUrl(v);
     case 'username': v = v.replace(/^@/, ''); return /^[^\s/@]{1,64}$/.test(v) ? v.toLowerCase() : '';

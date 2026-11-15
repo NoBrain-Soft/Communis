@@ -1,7 +1,8 @@
 import { Resolver } from 'node:dns/promises';
 import { isIPv4, isIP, registrableDomain } from '../../shared/entities.js';
 
-const NO_DATA = new Set(['ENODATA', 'ENOTFOUND', 'NXDOMAIN', 'ESERVFAIL']);
+// ENOTFOUND is also what a machine without direct DNS access reports, so only "no such record" is trusted without asking DoH
+const NO_DATA = new Set(['ENODATA']);
 
 /** Resolve a record set as plain strings. Uses the system resolver, falls back to DNS-over-HTTPS. */
 export async function resolve(name, type, ctx) {

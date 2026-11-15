@@ -139,7 +139,7 @@ test('titles, imprint lines and company facts (Austrian-style site)', async () =
   assert.equal(people['Petra Lang'].title, 'Dr. MBA');
   assert.equal(people['Stefan Reisinger'].role, 'Prokurist');
   assert.equal(people['Marlene Pramhaas'].role, 'Gebietsleiterin Oberösterreich');
-  assert.deepEqual(companyFacts(text), { vat_id: 'ATU 12345678', company_register: '123456 a', register_court: 'Landesgericht Wels', legal_form: 'GmbH', address: 'Feldgasse 19, 4600 Wels' });
+  assert.deepEqual(companyFacts(text), { vat_id: 'ATU 12345678', company_register: '123456 a', register_court: 'Landesgericht Wels', legal_form: 'GmbH', name: 'Nordwind Pharma GmbH', names: ['Nordwind Pharma GmbH'], address: 'Feldgasse 19, 4600 Wels' });
 
   const http = { async raw(url) {
     const h = { '/': '<html><head><meta property="og:site_name" content="Nordwind Pharma"></head><body><a href="/impressum">Impressum</a></body></html>', '/impressum': html }[new URL(url).pathname];
@@ -152,4 +152,74 @@ test('titles, imprint lines and company facts (Austrian-style site)', async () =
   assert.equal(by['organization:nordwind pharma'].props.vat_id, 'ATU 12345678');
   assert.ok(by['location:feldgasse 19, 4600 wels']);
   assert.equal(r.entities.filter((e) => e.type === 'person').length, 5);
+});
+
+// Patterns taken from real sites during live testing (markup reduced, names changed).
+test('role printed above the name, lazy-loaded portrait, mistyped mailto', async () => {
+  const html = `<section><div class="row"><div><figure><img class="lazyload" src="data:image/jpeg;base64,AAAA" data-srcset="/img/sr_630.jpg 630w,/img/sr_330.jpg 330w"><figcaption>Fotocredit: Peter Baier</figcaption></figure></div>
+    <div><div class="h5 fw-normal">Head of Sales Nordwind Human</div><h2 class="h2">Stefan Reisinger, MBA</h2><p><em>We supply our customers.</em></p><a href="mailto:stefan.reisinger@nordwind-pharma.at" class="btn">Contact me</a></div></div></section>
+    <section><h2 class="h2">Contact</h2><div class="h5">Tina Pfleger, MA / Head of Business Unit Sales Portfolio</div><p>We strive for partnership.</p><a href="mailto:mailtotina.pfleger@nordwind-pharma.at">contact me</a></section>`;
+  const people = Object.fromEntries(extractPeople(html, 'https://www.nordwind-pharma.com/en/people-health', ['nordwind pharma']).map((p) => [p.name, p]));
+  assert.equal(people['Stefan Reisinger'].role, 'Head of Sales Nordwind Human');
+  assert.equal(people['Stefan Reisinger'].title, 'MBA');
+  assert.equal(people['Stefan Reisinger'].image, 'https://www.nordwind-pharma.com/img/sr_630.jpg');
+  assert.ok(people['Stefan Reisinger'].staff);
+  assert.equal(people['Tina Pfleger'].role, 'Head of Business Unit Sales Portfolio');
+  assert.equal(people['Tina Pfleger'].title, 'MA');
+  assert.deepEqual(people['Tina Pfleger'].emails, ['tina.pfleger@nordwind-pharma.at']);
+  assert.equal(Object.keys(people).length, 2);
+});
+
+test('press items on one page: guests are mentioned, own people are staff', async () => {
+  const press = `<html><body><nav><a href="/en/a-very-long-navigation-entry-about-things">A very long navigation entry about things</a></nav>
+    <h2>Press 2023</h2><div class="rollout"><a href="#c2140" role="button" class="rollout-trigger"> 17.01.2023: Groundbreaking ceremony new production complex </a>
+    <div id="c2140"><h2>Nordwind Pharma triples production</h2><p>On January 17, 2023, the Upper Austrian Governor Mag. Thomas Stelzer, the Mayor of Wels Dr. Andreas Rabl, Nordwind Pharma owner Mag. pharm. Florian Fritsch and Nordwind Pharma CEO Roland Huemer held the groundbreaking ceremony.</p>
+    <p>f.l.t.r.: Mag. Angelika Sery-Froschauer (WKO Vizepräsidentin), Mag. Roland Huemer (CEO Nordwind Pharma AG)</p></div></div>
+    <div class="rollout"><a href="#c3908" role="button"> 01.04.2023: Management Board confirmed </a><div id="c3908"><p>Nordwind Pharma CEO Roland Huemer continues.</p></div></div></body></html>`;
+  const { mentionsInText, newsItems, blockText } = await import('../server/lib/people.js');
+  const items = newsItems(press, 'https://www.nordwind-pharma.com/en/press-updates');
+  assert.deepEqual(items.map((i) => [i.url.split('#')[1], i.date, i.title]), [['c2140', '2023-01-17', 'Groundbreaking ceremony new production complex'], ['c3908', '2023-04-01', 'Management Board confirmed']]);
+  const m = Object.fromEntries(mentionsInText(blockText(items[0].body), ['nordwind pharma']).map((p) => [p.name, p]));
+  assert.deepEqual([m['Thomas Stelzer'].role, m['Thomas Stelzer'].own], ['Upper Austrian Governor', false]);
+  assert.deepEqual([m['Andreas Rabl'].role, m['Andreas Rabl'].own], ['Mayor of Wels', false]);
+  assert.deepEqual([m['Florian Fritsch'].role, m['Florian Fritsch'].own], ['owner', true]);
+  assert.deepEqual([m['Roland Huemer'].role, m['Roland Huemer'].own], ['CEO', true]);
+  assert.ok(m['Angelika Sery-Froschauer']);
+  assert.ok(!Object.keys(m).some((n) => /Wels|Nordwind|Upper/.test(n)));
+
+  const http = { async raw(url) {
+    const h = { '/': '<html><body><a href="/en/press-updates">Press updates</a></body></html>', '/en/press-updates': press }[new URL(url).pathname];
+    if (h == null) throw new Error('404');
+    return page(url, h);
+  } };
+  const r = await runModule(mods.get('site_people'), { type: 'domain', value: 'nordwind-pharma.com' }, {}, http);
+  const by = Object.fromEntries(r.entities.map((e) => [e.key, e]));
+  const rels = (k) => by[k].edges.map((e) => e.rel).sort();
+  assert.deepEqual(rels('person:thomas stelzer'), ['mentioned on site', 'mentions']);
+  assert.deepEqual(rels('person:angelika sery-froschauer'), ['mentioned on site', 'mentions']);
+  assert.deepEqual(rels('person:roland huemer'), ['mentions', 'mentions', 'named on site']);
+  assert.equal(by['person:thomas stelzer'].props.role, 'Upper Austrian Governor');
+  assert.ok(by['url:https://nordwind-pharma.com/en/press-updates#c2140']);
+  assert.equal(r.props.press_items, 2);
+});
+
+test('staff directory built from links to personal pages with a job-title class', () => {
+  const html = `<div class="views-row"><div class="views-field views-field-title"><a href="/about/staff/cooper-quintin">Cooper Quintin</a></div>
+    <div class="views-field views-field-field-profile-title"> Senior Staff Technologist </div><div class="views-field-body"><p><b>Cooper Quintin </b><span>is a security researcher.</span></p></div>
+    <div class="views-field-field-profile-email"><a href="mailto:cooperq@example.org">cooperq@example.org</a></div></div>
+    <div class="views-row"><div class="views-field views-field-title"><a href="/about/staff/efren-narvaez">Efren Narvaez</a></div><div class="views-field views-field-field-profile-title"> Senior Receptionist </div></div>`;
+  const people = Object.fromEntries(extractPeople(html, 'https://www.example.org/about/staff').map((p) => [p.name, p]));
+  assert.deepEqual(Object.keys(people).sort(), ['Cooper Quintin', 'Efren Narvaez']);
+  assert.equal(people['Cooper Quintin'].role, 'Senior Staff Technologist');
+  assert.deepEqual(people['Cooper Quintin'].emails, ['cooperq@example.org']);
+  assert.equal(people['Efren Narvaez'].role, 'Senior Receptionist');
+});
+
+test('imprint list with section words after names; testimonial authors are guests', async () => {
+  const { peopleInText, mentionsInText } = await import('../server/lib/people.js');
+  const names = mentionsInText('Mag. Birgit Leitner Redaktion\nMag. Claudia Greindl\nMag. Claudia Greindl Redaktion\nAlexandra Holzinger, MA Teamleitung Marketing', []).map((p) => p.name);
+  assert.ok(names.includes('Birgit Leitner') && names.includes('Claudia Greindl') && !names.some((n) => /Redaktion/.test(n)));
+  const q = Object.fromEntries(peopleInText('Peter Norvig, director of search quality at Google\nDavid Ascher, Director, 2001-2008', ['python'], true).map((p) => [p.name, p]));
+  assert.equal(q['Peter Norvig'].staff, false);
+  assert.equal(q['David Ascher'].staff, true);
 });

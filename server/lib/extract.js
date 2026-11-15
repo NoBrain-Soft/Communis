@@ -136,7 +136,7 @@ export function extractFromHtml(html, baseUrl) {
   for (const tag of html.match(/<a\b[^>]*>/gi) || []) {
     const href = attr(tag, 'href');
     if (!href) continue;
-    if (/^mailto:/i.test(href)) { res.emails.push(decodeURIComponent(href.slice(7).split('?')[0]).toLowerCase()); continue; }
+    if (/^mailto:/i.test(href)) { try { res.emails.push(decodeURIComponent(href.replace(/^(?:mailto:)+/i, '').split('?')[0]).trim().toLowerCase()); } catch { /* bad escape */ } continue; }
     if (/^tel:/i.test(href)) { res.phones.push(decodeURIComponent(href.slice(4))); continue; }
     let u;
     try { u = new URL(href, base); } catch { continue; }
@@ -149,8 +149,8 @@ export function extractFromHtml(html, baseUrl) {
   res.externalDomains = [...domains.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d);
 
   const text = decodeEntities(html.replace(/<(script|style|noscript)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' '));
-  res.emails.push(...findEmails(text));
-  res.emails = uniq(res.emails).filter((e) => !NOT_EMAIL.test(e));
+  res.emails.push(...findEmails(text).filter((e) => !/^mailto/.test(e)));
+  res.emails = uniq(res.emails.map((e) => e.replace(/^mailto:?(?=[a-z0-9._%+-]+@)/, ''))).filter((e) => !NOT_EMAIL.test(e));
   res.phones = uniq(res.phones);
   res.people = uniq(res.people);
   res.orgs = uniq(res.orgs);

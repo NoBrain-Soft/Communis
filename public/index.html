@@ -106,6 +106,10 @@
     <label class="field">News region <span class="muted">(country:language, e.g. AT:de, DE:de, US:en, GB:en)</span>
       <input id="set-news-region" type="text" placeholder="US:en" autocomplete="off" spellcheck="false" style="max-width:120px">
     </label>
+    <label class="field">Web search API <span class="muted">(optional: Brave Search API key, or the address of a SearXNG instance)</span>
+      <span style="display:flex;gap:6px"><input id="set-brave" type="password" autocomplete="off" style="flex:1"><input id="set-searx" type="text" placeholder="https://searx.example.org" autocomplete="off" spellcheck="false" style="flex:1"></span>
+    </label>
+    <p class="muted">Web and social-profile searches use DuckDuckGo by default, which refuses automated queries from some networks. With one of these set, they use it instead.</p>
     <p class="muted">“News &amp; press mentions” searches Google News for this region, and additionally searches only the sites listed here.</p>
     <div class="dlg-actions"><button value="cancel">Cancel</button><button class="primary" value="ok">Save</button></div>
   </form>

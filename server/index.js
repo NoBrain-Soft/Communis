@@ -89,7 +89,7 @@ const validId = (id) => /^[a-z0-9]{8,24}$/.test(id);
 
 async function getSettings() {
   const s = await readJson(SETTINGS_FILE, {});
-  return { githubToken: s.githubToken || process.env.GITHUB_TOKEN || '', newsSites: s.newsSites || '', newsRegion: s.newsRegion || 'US:en' };
+  return { githubToken: s.githubToken || process.env.GITHUB_TOKEN || '', newsSites: s.newsSites || '', newsRegion: s.newsRegion || 'US:en', braveKey: s.braveKey || process.env.BRAVE_API_KEY || '', searxUrl: s.searxUrl || '' };
 }
 
 // ---- http helpers ----------------------------------------------------------------------------
@@ -165,11 +165,13 @@ async function api(req, res, url, modules) {
   }
 
   if (pathname === '/api/settings') {
-    if (m === 'GET') { const s = await getSettings(); return send(res, 200, { githubToken: !!s.githubToken, newsSites: s.newsSites, newsRegion: s.newsRegion }); }
+    if (m === 'GET') { const s = await getSettings(); return send(res, 200, { githubToken: !!s.githubToken, newsSites: s.newsSites, newsRegion: s.newsRegion, braveKey: !!s.braveKey, searxUrl: s.searxUrl }); }
     if (m === 'PUT') {
       const b = await jsonBody(req);
       const cur = await readJson(SETTINGS_FILE, {});
       if (typeof b.githubToken === 'string' && b.githubToken.trim()) cur.githubToken = b.githubToken.trim();
+      if (typeof b.braveKey === 'string' && b.braveKey.trim()) cur.braveKey = b.braveKey.trim();
+      if (typeof b.searxUrl === 'string') cur.searxUrl = b.searxUrl.trim().slice(0, 200);
       if (typeof b.newsSites === 'string') cur.newsSites = b.newsSites.slice(0, 500);
       if (typeof b.newsRegion === 'string') cur.newsRegion = b.newsRegion.trim().slice(0, 10);
       await writeJson(SETTINGS_FILE, cur);

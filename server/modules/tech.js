@@ -18,18 +18,31 @@ export default [
     async run({ value, props }, ctx) {
       // InternetDB gives a CPE; that matches a product and version exactly, a keyword search is only a fallback
       const cpe = props?.cpe && String(props.cpe).replace(/^cpe:\//, '').split(':');
-      const q = cpe && cpe.length >= 3
-        ? `virtualMatchString=${encodeURIComponent(`cpe:2.3:${cpe[0]}:${cpe[1]}:${cpe[2]}:${cpe[3] || '*'}`)}`
-        : `keywordSearch=${encodeURIComponent(value.replace(/^WordPress plugin: /, ''))}`;
-      const head = await ctx.http.json(`${NVD}?${q}&resultsPerPage=1`, { timeout: 30000 });
+      const name = value.replace(/^WordPress plugin: /, '').trim();
+      const ver = name.match(/^(.*?)[\s/]+v?(\d+(?:\.\d+){1,3}[a-z0-9.-]*)$/i);
+      const queries = [];
+      if (cpe && cpe.length >= 3) queries.push(`virtualMatchString=${encodeURIComponent(`cpe:2.3:${cpe[0]}:${cpe[1]}:${cpe[2]}:${cpe[3] || '*'}`)}`);
+      else if (ver) {
+        // "nginx 1.18.0" → match the product and version in NVD's product dictionary, whoever the vendor is
+        const words = ver[1].toLowerCase().split(/[^a-z0-9.+]+/).filter(Boolean);
+        for (const product of [...new Set([words[words.length - 1], words.join('_')])].filter(Boolean)) queries.push(`virtualMatchString=${encodeURIComponent(`cpe:2.3:a:*:${product}:${ver[2]}`)}`);
+      }
+      queries.push(`keywordSearch=${encodeURIComponent(ver ? ver[1] : name)}`);
+      let q = queries[0];
+      let head = null;
+      for (q of queries) {
+        head = await ctx.http.json(`${NVD}?${q}&resultsPerPage=1`, { timeout: 30000 });
+        if (head?.totalResults) break;
+      }
+      const exact = q.startsWith('virtualMatchString');
       const total = head?.totalResults || 0;
       if (!total) return { entities: [], notes: ['No CVE entries match this name.'] };
       const page = total > 1 ? await ctx.http.json(`${NVD}?${q}&resultsPerPage=15&startIndex=${Math.max(0, total - 15)}`, { timeout: 30000, maxBytes: 6_000_000 }) : head;
       const list = (page?.vulnerabilities || []).map((v) => v.cve).filter((c) => c?.id && c.vulnStatus !== 'Rejected').reverse();
       return {
-        entities: list.map((c) => ({ type: 'vulnerability', value: c.id, rel: cpe ? 'affected by' : 'possibly affected by', props: summary(c) })),
+        entities: list.map((c) => ({ type: 'vulnerability', value: c.id, rel: exact ? 'affected by' : 'possibly affected by', props: summary(c) })),
         props: { cves_total: total },
-        notes: [total > 15 ? `${total} CVEs match; showing the 15 most recent.` : '', cpe ? '' : 'Matched by keyword: check that each CVE really applies to this version.'].filter(Boolean),
+        notes: [total > 15 ? `${total} CVEs match; showing the 15 most recent.` : '', exact ? '' : 'Matched by product name only: check that each CVE really applies to this version.'].filter(Boolean),
       };
     },
   },

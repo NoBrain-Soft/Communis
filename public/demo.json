@@ -1,0 +1,754 @@
+{
+ "name": "Demo: Northwind Labs (fictional)",
+ "nodes": [
+  {
+   "type": "domain",
+   "value": "northwind-labs.example",
+   "label": "",
+   "props": {
+    "registered": "2016-03-11",
+    "expires": "2027-03-11",
+    "registrar": "Example Registrar Ltd",
+    "title": "Northwind Labs – applied research"
+   },
+   "sources": [
+    "demo"
+   ],
+   "notes": "Starting point of the demo."
+  },
+  {
+   "type": "domain",
+   "value": "www.northwind-labs.example",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "domain",
+   "value": "mail.northwind-labs.example",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "domain",
+   "value": "vpn.northwind-labs.example",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "domain",
+   "value": "dev.northwind-labs.example",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "domain",
+   "value": "ns1.hosting.example",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "ip",
+   "value": "203.0.113.24",
+   "label": "",
+   "props": {
+    "country": "NL",
+    "isp": "Example Hosting BV"
+   },
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "ip",
+   "value": "203.0.113.87",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "ip",
+   "value": "198.51.100.7",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "netblock",
+   "value": "203.0.113.0/24",
+   "label": "",
+   "props": {
+    "name": "EXAMPLE-HOSTING-NL"
+   },
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "asn",
+   "value": "AS64500",
+   "label": "AS64500 Example Hosting",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "organization",
+   "value": "Example Hosting BV",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "organization",
+   "value": "Northwind Labs",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "location",
+   "value": "Amsterdam, North Holland, Netherlands",
+   "label": "",
+   "props": {
+    "lat": 52.37,
+    "lon": 4.89
+   },
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "service",
+   "value": "203.0.113.24:443",
+   "label": ":443",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "service",
+   "value": "203.0.113.87:22",
+   "label": ":22",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "service",
+   "value": "198.51.100.7:3389",
+   "label": ":3389",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "technology",
+   "value": "nginx 1.18.0",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "technology",
+   "value": "WordPress",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "technology",
+   "value": "openbsd openssh 7.4",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "vulnerability",
+   "value": "CVE-2021-23017",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "certificate",
+   "value": "a3f1c09e5d7b42e88f10c6aa91d3b7e45c2f8d016e9a7b34c5d8e2f1a0b9c8d7",
+   "label": "northwind-labs.example",
+   "props": {
+    "issuer": "Let's Encrypt",
+    "valid_to": "Mar 02 2027"
+   },
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "domain",
+   "value": "fjord-analytics.example",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": "Different company name, same certificate and same admin e-mail."
+  },
+  {
+   "type": "person",
+   "value": "Mara Lindqvist",
+   "label": "",
+   "props": {
+    "occupation": "researcher",
+    "description": "Fictional person for the demo"
+   },
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "person",
+   "value": "Jonas Adeyemi",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "email",
+   "value": "mara@northwind-labs.example",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "email",
+   "value": "jonas.adeyemi@northwind-labs.example",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "email",
+   "value": "hostmaster@fjord-analytics.example",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "username",
+   "value": "mlindqvist",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "username",
+   "value": "jadeyemi",
+   "label": "",
+   "props": {
+    "confidence": "guess"
+   },
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "profile",
+   "value": "https://github.com/mlindqvist-demo",
+   "label": "GitHub: mlindqvist",
+   "props": {
+    "site": "GitHub",
+    "username": "mlindqvist",
+    "public_repos": 23
+   },
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "profile",
+   "value": "https://mastodon.example/@mlindqvist",
+   "label": "Mastodon: mlindqvist",
+   "props": {
+    "site": "Mastodon"
+   },
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "profile",
+   "value": "https://www.linkedin.com/in/jonas-adeyemi-demo",
+   "label": "LinkedIn: jonas-adeyemi",
+   "props": {
+    "site": "LinkedIn"
+   },
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "phone",
+   "value": "+31205550142",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "location",
+   "value": "Netherlands",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "organization",
+   "value": "Delft Institute of Technology (fictional)",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  },
+  {
+   "type": "url",
+   "value": "https://mara-writes.example/about",
+   "label": "",
+   "props": {},
+   "sources": [
+    "demo"
+   ],
+   "notes": ""
+  }
+ ],
+ "edges": [
+  {
+   "source": "domain:www.northwind-labs.example",
+   "target": "domain:northwind-labs.example",
+   "label": "subdomain",
+   "module": "demo"
+  },
+  {
+   "source": "domain:mail.northwind-labs.example",
+   "target": "domain:northwind-labs.example",
+   "label": "subdomain",
+   "module": "demo"
+  },
+  {
+   "source": "domain:vpn.northwind-labs.example",
+   "target": "domain:northwind-labs.example",
+   "label": "subdomain",
+   "module": "demo"
+  },
+  {
+   "source": "domain:dev.northwind-labs.example",
+   "target": "domain:northwind-labs.example",
+   "label": "subdomain",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "domain:ns1.hosting.example",
+   "label": "name server",
+   "module": "demo"
+  },
+  {
+   "source": "domain:fjord-analytics.example",
+   "target": "domain:ns1.hosting.example",
+   "label": "name server",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "ip:203.0.113.24",
+   "label": "A record",
+   "module": "demo"
+  },
+  {
+   "source": "domain:www.northwind-labs.example",
+   "target": "ip:203.0.113.24",
+   "label": "A record",
+   "module": "demo"
+  },
+  {
+   "source": "domain:fjord-analytics.example",
+   "target": "ip:203.0.113.24",
+   "label": "A record",
+   "module": "demo"
+  },
+  {
+   "source": "domain:dev.northwind-labs.example",
+   "target": "ip:203.0.113.87",
+   "label": "A record",
+   "module": "demo"
+  },
+  {
+   "source": "domain:vpn.northwind-labs.example",
+   "target": "ip:198.51.100.7",
+   "label": "A record",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "domain:mail.northwind-labs.example",
+   "label": "mail server",
+   "module": "demo"
+  },
+  {
+   "source": "domain:mail.northwind-labs.example",
+   "target": "ip:203.0.113.87",
+   "label": "A record",
+   "module": "demo"
+  },
+  {
+   "source": "ip:203.0.113.24",
+   "target": "netblock:203.0.113.0/24",
+   "label": "part of",
+   "module": "demo"
+  },
+  {
+   "source": "ip:203.0.113.87",
+   "target": "netblock:203.0.113.0/24",
+   "label": "part of",
+   "module": "demo"
+  },
+  {
+   "source": "ip:203.0.113.24",
+   "target": "asn:as64500",
+   "label": "announced by",
+   "module": "demo"
+  },
+  {
+   "source": "ip:203.0.113.87",
+   "target": "asn:as64500",
+   "label": "announced by",
+   "module": "demo"
+  },
+  {
+   "source": "asn:as64500",
+   "target": "organization:example hosting bv",
+   "label": "operated by",
+   "module": "demo"
+  },
+  {
+   "source": "asn:as64500",
+   "target": "netblock:203.0.113.0/24",
+   "label": "announces",
+   "module": "demo"
+  },
+  {
+   "source": "ip:203.0.113.24",
+   "target": "location:amsterdam, north holland, netherlands",
+   "label": "located in",
+   "module": "demo"
+  },
+  {
+   "source": "ip:203.0.113.24",
+   "target": "service:203.0.113.24:443",
+   "label": "open port",
+   "module": "demo"
+  },
+  {
+   "source": "ip:203.0.113.87",
+   "target": "service:203.0.113.87:22",
+   "label": "open port",
+   "module": "demo"
+  },
+  {
+   "source": "ip:198.51.100.7",
+   "target": "service:198.51.100.7:3389",
+   "label": "open port",
+   "module": "demo"
+  },
+  {
+   "source": "ip:203.0.113.24",
+   "target": "technology:nginx 1.18.0",
+   "label": "runs",
+   "module": "demo"
+  },
+  {
+   "source": "ip:203.0.113.87",
+   "target": "technology:openbsd openssh 7.4",
+   "label": "runs",
+   "module": "demo"
+  },
+  {
+   "source": "ip:203.0.113.24",
+   "target": "vulnerability:cve-2021-23017",
+   "label": "may be affected by",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "technology:wordpress",
+   "label": "uses",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "certificate:a3f1c09e5d7b42e88f10c6aa91d3b7e45c2f8d016e9a7b34c5d8e2f1a0b9c8d7",
+   "label": "presents",
+   "module": "demo"
+  },
+  {
+   "source": "certificate:a3f1c09e5d7b42e88f10c6aa91d3b7e45c2f8d016e9a7b34c5d8e2f1a0b9c8d7",
+   "target": "domain:fjord-analytics.example",
+   "label": "valid for",
+   "module": "demo"
+  },
+  {
+   "source": "certificate:a3f1c09e5d7b42e88f10c6aa91d3b7e45c2f8d016e9a7b34c5d8e2f1a0b9c8d7",
+   "target": "domain:www.northwind-labs.example",
+   "label": "valid for",
+   "module": "demo"
+  },
+  {
+   "source": "certificate:a3f1c09e5d7b42e88f10c6aa91d3b7e45c2f8d016e9a7b34c5d8e2f1a0b9c8d7",
+   "target": "organization:northwind labs",
+   "label": "issued to",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "organization:northwind labs",
+   "label": "registrant",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "email:mara@northwind-labs.example",
+   "label": "mentions",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "email:jonas.adeyemi@northwind-labs.example",
+   "label": "mentions",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "phone:+31205550142",
+   "label": "mentions",
+   "module": "demo"
+  },
+  {
+   "source": "phone:+31205550142",
+   "target": "location:netherlands",
+   "label": "country code",
+   "module": "demo"
+  },
+  {
+   "source": "domain:fjord-analytics.example",
+   "target": "email:hostmaster@fjord-analytics.example",
+   "label": "registrant email",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "email:hostmaster@fjord-analytics.example",
+   "label": "DMARC reports",
+   "module": "demo"
+  },
+  {
+   "source": "email:mara@northwind-labs.example",
+   "target": "username:mlindqvist",
+   "label": "local part",
+   "module": "demo"
+  },
+  {
+   "source": "email:mara@northwind-labs.example",
+   "target": "domain:northwind-labs.example",
+   "label": "mail domain",
+   "module": "demo"
+  },
+  {
+   "source": "email:jonas.adeyemi@northwind-labs.example",
+   "target": "domain:northwind-labs.example",
+   "label": "mail domain",
+   "module": "demo"
+  },
+  {
+   "source": "email:hostmaster@fjord-analytics.example",
+   "target": "domain:fjord-analytics.example",
+   "label": "mail domain",
+   "module": "demo"
+  },
+  {
+   "source": "username:mlindqvist",
+   "target": "profile:https://github.com/mlindqvist-demo",
+   "label": "has account",
+   "module": "demo"
+  },
+  {
+   "source": "username:mlindqvist",
+   "target": "profile:https://mastodon.example/@mlindqvist",
+   "label": "has account",
+   "module": "demo"
+  },
+  {
+   "source": "profile:https://github.com/mlindqvist-demo",
+   "target": "person:mara lindqvist",
+   "label": "name on profile",
+   "module": "demo"
+  },
+  {
+   "source": "profile:https://github.com/mlindqvist-demo",
+   "target": "organization:northwind labs",
+   "label": "works at",
+   "module": "demo"
+  },
+  {
+   "source": "profile:https://github.com/mlindqvist-demo",
+   "target": "location:amsterdam, north holland, netherlands",
+   "label": "located in",
+   "module": "demo"
+  },
+  {
+   "source": "profile:https://github.com/mlindqvist-demo",
+   "target": "url:https://mara-writes.example/about",
+   "label": "website",
+   "module": "demo"
+  },
+  {
+   "source": "profile:https://github.com/mlindqvist-demo",
+   "target": "email:mara@northwind-labs.example",
+   "label": "public email",
+   "module": "demo"
+  },
+  {
+   "source": "profile:https://mastodon.example/@mlindqvist",
+   "target": "url:https://mara-writes.example/about",
+   "label": "website",
+   "module": "demo"
+  },
+  {
+   "source": "person:mara lindqvist",
+   "target": "organization:delft institute of technology (fictional)",
+   "label": "educated at",
+   "module": "demo"
+  },
+  {
+   "source": "person:jonas adeyemi",
+   "target": "organization:delft institute of technology (fictional)",
+   "label": "educated at",
+   "module": "demo"
+  },
+  {
+   "source": "person:mara lindqvist",
+   "target": "person:jonas adeyemi",
+   "label": "co-author",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "person:jonas adeyemi",
+   "label": "names",
+   "module": "demo"
+  },
+  {
+   "source": "person:jonas adeyemi",
+   "target": "username:jadeyemi",
+   "label": "possible username",
+   "module": "demo"
+  },
+  {
+   "source": "domain:northwind-labs.example",
+   "target": "profile:https://www.linkedin.com/in/jonas-adeyemi-demo",
+   "label": "links to profile",
+   "module": "demo"
+  },
+  {
+   "source": "profile:https://www.linkedin.com/in/jonas-adeyemi-demo",
+   "target": "person:jonas adeyemi",
+   "label": "name on profile",
+   "module": "demo"
+  },
+  {
+   "source": "url:https://mara-writes.example/about",
+   "target": "email:hostmaster@fjord-analytics.example",
+   "label": "mentions",
+   "module": "demo"
+  }
+ ]
+}

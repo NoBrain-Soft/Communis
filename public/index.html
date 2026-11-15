@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Communis – OSINT link analysis</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Communis</div>
+  <div class="ws">
+    <select id="ws-select" title="Investigation" aria-label="Investigation"></select>
+    <button id="ws-menu-btn" class="icon-btn" title="Investigation options" aria-label="Investigation options">⋯</button>
+  </div>
+  <form id="add-form" class="add-form" autocomplete="off">
+    <select id="add-type" aria-label="Entity type"></select>
+    <input id="add-value" type="text" placeholder="Start with a name, e-mail, username, domain, IP address…" aria-label="Value to investigate" spellcheck="false">
+    <button class="primary" type="submit">Add</button>
+  </form>
+  <div class="tools">
+    <button id="btn-templates" title="Ready-made investigations that run several searches in sequence">Templates</button>
+    <button id="btn-import-text" title="Paste text and extract every entity in it">Extract from text</button>
+    <button id="btn-upload" title="Add a photo from your computer">Add photo</button>
+    <input id="file-photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden>
+    <input id="file-json" type="file" accept="application/json,.json" hidden>
+    <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="side left" aria-label="Entities">
+    <input id="search" type="search" placeholder="Find in graph…" aria-label="Find in graph">
+    <div id="legend" class="legend"></div>
+    <div class="side-foot">
+      <div id="stats" class="stats"></div>
+      <label class="field-row">Layout
+        <select id="layout-select">
+          <option value="fcose">Force-directed</option>
+          <option value="concentric">Concentric</option>
+          <option value="breadthfirst">Hierarchy</option>
+          <option value="circle">Circle</option>
+          <option value="grid">Grid</option>
+        </select>
+      </label>
+      <div class="btn-row">
+        <button id="btn-layout">Re-arrange</button>
+        <button id="btn-fit">Fit view</button>
+      </div>
+    </div>
+  </aside>
+
+  <section class="canvas-wrap">
+    <div id="cy" class="cy"></div>
+    <div id="empty" class="empty" hidden>
+      <h1>Start an investigation</h1>
+      <p>Add a first entity in the bar above. Then run searches on it: every result becomes a node, and entities that turn up from several directions link together automatically.</p>
+      <div class="examples" id="examples"></div>
+      <p class="hint"><button id="btn-templates-2" class="primary">Start from a template</button></p>
+      <p class="hint">Or paste a block of text with <b>Extract from text</b>, add a photo, or <a href="#" id="link-demo">load the demo graph</a>.</p>
+    </div>
+    <div id="jobs" class="jobs" hidden><span class="spinner"></span><span id="jobs-text"></span></div>
+    <div id="ctx" class="ctx" hidden role="menu"></div>
+  </section>
+
+  <aside class="side right">
+    <div id="details" class="details" aria-live="polite"></div>
+    <div class="log-wrap">
+      <div class="log-head"><span>Activity</span><button id="btn-clear-log" class="link-btn">Clear</button></div>
+      <div id="log" class="log"></div>
+    </div>
+  </aside>
+</main>
+
+<dialog id="dlg-text">
+  <form method="dialog">
+    <h2>Extract entities from text</h2>
+    <p class="muted">Paste anything: an e-mail with headers, a report, a log file, a web page. E-mail addresses, URLs, social profiles, IP addresses, domains, phone numbers and CVE ids are picked out and added to the graph.</p>
+    <textarea id="text-input" rows="12" placeholder="Paste text here…"></textarea>
+    <div class="dlg-actions"><button value="cancel">Cancel</button><button id="text-ok" class="primary" value="ok">Extract</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-templates" class="wide">
+  <h2>Investigation templates</h2>
+  <p class="muted">A template runs a fixed sequence of searches from one starting point and builds the graph for you. Progress is shown in the activity log.</p>
+  <div id="tpl-list" class="tpl-list"></div>
+  <div class="dlg-actions"><button id="tpl-close">Close</button></div>
+</dialog>
+
+<dialog id="dlg-settings">
+  <form method="dialog">
+    <h2>Settings</h2>
+    <label class="field">GitHub token <span class="muted">(optional)</span>
+      <input id="set-github" type="password" placeholder="ghp_…" autocomplete="off">
+    </label>
+    <p class="muted" id="set-github-state"></p>
+    <p class="muted">Without a token GitHub allows about 60 lookups per hour. The token is stored only on this computer, in <code>data/settings.json</code>.</p>
+    <div class="dlg-actions"><button value="cancel">Cancel</button><button class="primary" value="ok">Save</button></div>
+  </form>
+</dialog>
+
+<script src="/vendor/cytoscape.js"></script>
+<script src="/vendor/layout-base.js"></script>
+<script src="/vendor/cose-base.js"></script>
+<script src="/vendor/cytoscape-fcose.js"></script>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

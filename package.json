@@ -4,7 +4,9 @@
   "description": "Graphical OSINT link-analysis tool: search, extract entities and connect them in a node graph.",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server/index.js",
     "test": "node --test"
@@ -13,6 +15,7 @@
     "cytoscape": "^3.30.0",
     "cytoscape-fcose": "^2.2.0",
     "jpeg-js": "^0.4.4",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "tracking": "^1.1.3"
   }
 }

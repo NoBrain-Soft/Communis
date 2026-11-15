@@ -23,6 +23,7 @@
     <button id="btn-import-text" title="Paste text and extract every entity in it">Extract from text</button>
     <button id="btn-upload" title="Add a photo from your computer">Add photo</button>
     <input id="file-photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden>
+    <input id="file-attach" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden>
     <input id="file-json" type="file" accept="application/json,.json" hidden>
     <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
   </div>
@@ -36,6 +37,8 @@
       <div id="stats" class="stats"></div>
       <label class="field-row">Layout
         <select id="layout-select">
+          <option value="auto">Automatic</option>
+          <option value="radial">Organised</option>
           <option value="fcose">Force-directed</option>
           <option value="concentric">Concentric</option>
           <option value="breadthfirst">Hierarchy</option>
@@ -43,6 +46,7 @@
           <option value="grid">Grid</option>
         </select>
       </label>
+      <label class="check-row"><input id="show-sub" type="checkbox" checked> Show roles and details under names</label>
       <div class="btn-row">
         <button id="btn-layout">Re-arrange</button>
         <button id="btn-fit">Fit view</button>
@@ -96,6 +100,13 @@
     </label>
     <p class="muted" id="set-github-state"></p>
     <p class="muted">Without a token GitHub allows about 60 lookups per hour. The token is stored only on this computer, in <code>data/settings.json</code>.</p>
+    <label class="field">News sites to search <span class="muted">(optional, separated by commas)</span>
+      <input id="set-news-sites" type="text" placeholder="tips.at, nachrichten.at, derstandard.at" autocomplete="off" spellcheck="false">
+    </label>
+    <label class="field">News region <span class="muted">(country:language, e.g. AT:de, DE:de, US:en, GB:en)</span>
+      <input id="set-news-region" type="text" placeholder="US:en" autocomplete="off" spellcheck="false" style="max-width:120px">
+    </label>
+    <p class="muted">“News &amp; press mentions” searches Google News for this region, and additionally searches only the sites listed here.</p>
     <div class="dlg-actions"><button value="cancel">Cancel</button><button class="primary" value="ok">Save</button></div>
   </form>
 </dialog>

@@ -68,7 +68,8 @@ export async function runModule(mod, entity, settings, fetchImpl = fetcher) {
   if (!mod.inputs.includes(entity.type)) throw new Error(`${mod.name} does not accept ${entity.type} entities`);
   const names = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, 5).map((x) => x.slice(0, 80)) : []);
   // what the graph already links this entity to; lets searches narrow down namesakes
-  const input = { type: entity.type, value, props: entity.props || {}, context: { orgs: names(entity.context?.orgs), domains: names(entity.context?.domains) } };
+  const input = { type: entity.type, value, props: entity.props || {}, context: { orgs: names(entity.context?.orgs), domains: names(entity.context?.domains),
+    known: (Array.isArray(entity.context?.known) ? entity.context.known : []).filter((k) => ['person', 'organization', 'technology'].includes(k?.type) && typeof k.value === 'string').slice(0, 400).map((k) => ({ type: k.type, value: k.value.slice(0, 80) })) } };
   let timer;
   const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('The module took too long and was stopped')), 60000); });
   try {
@@ -88,7 +89,7 @@ const validId = (id) => /^[a-z0-9]{8,24}$/.test(id);
 
 async function getSettings() {
   const s = await readJson(SETTINGS_FILE, {});
-  return { githubToken: s.githubToken || process.env.GITHUB_TOKEN || '' };
+  return { githubToken: s.githubToken || process.env.GITHUB_TOKEN || '', newsSites: s.newsSites || '', newsRegion: s.newsRegion || 'US:en' };
 }
 
 // ---- http helpers ----------------------------------------------------------------------------
@@ -164,11 +165,13 @@ async function api(req, res, url, modules) {
   }
 
   if (pathname === '/api/settings') {
-    if (m === 'GET') { const s = await getSettings(); return send(res, 200, { githubToken: !!s.githubToken }); }
+    if (m === 'GET') { const s = await getSettings(); return send(res, 200, { githubToken: !!s.githubToken, newsSites: s.newsSites, newsRegion: s.newsRegion }); }
     if (m === 'PUT') {
       const b = await jsonBody(req);
       const cur = await readJson(SETTINGS_FILE, {});
-      if (typeof b.githubToken === 'string') cur.githubToken = b.githubToken.trim();
+      if (typeof b.githubToken === 'string' && b.githubToken.trim()) cur.githubToken = b.githubToken.trim();
+      if (typeof b.newsSites === 'string') cur.newsSites = b.newsSites.slice(0, 500);
+      if (typeof b.newsRegion === 'string') cur.newsRegion = b.newsRegion.trim().slice(0, 10);
       await writeJson(SETTINGS_FILE, cur);
       return send(res, 200, { ok: true });
     }
@@ -189,6 +192,35 @@ async function api(req, res, url, modules) {
       await writeJson(wsFile(w.id), w);
       return send(res, 200, w);
     }
+  }
+
+  // ---- shared index: where else does an entity appear? -----------------------------------------
+  if (pathname === '/api/xref' && m === 'POST') {
+    const b = await jsonBody(req);
+    const wanted = new Set((Array.isArray(b.keys) ? b.keys : []).filter((k) => typeof k === 'string').slice(0, 5000));
+    const hits = {};
+    for (const f of (await readdir(WS_DIR)).filter((n) => n.endsWith('.json'))) {
+      const w = await readJson(path.join(WS_DIR, f), null);
+      if (!w || w.id === b.workspace) continue;
+      const degree = new Map();
+      for (const e of w.edges || []) { degree.set(e.source, (degree.get(e.source) || 0) + 1); degree.set(e.target, (degree.get(e.target) || 0) + 1); }
+      for (const n of w.nodes || []) {
+        const key = keyOf(n.type, n.value);
+        if (!wanted.has(key) || n.props?.confidence === 'guess') continue;
+        (hits[key] ||= []).push({ id: w.id, name: w.name, links: degree.get(key) || 0, notes: n.notes ? String(n.notes).slice(0, 200) : undefined });
+      }
+    }
+    return send(res, 200, { hits });
+  }
+  const am = pathname.match(/^\/api\/workspaces\/([^/]+)\/around$/);
+  if (am && m === 'GET') {
+    if (!validId(am[1])) throw new ApiError(400, 'Bad workspace id');
+    const w = await readJson(wsFile(am[1]), null);
+    if (!w) throw new ApiError(404, 'Workspace not found');
+    const key = url.searchParams.get('key');
+    const edges = (w.edges || []).filter((e) => e.source === key || e.target === key);
+    const near = new Set([key, ...edges.flatMap((e) => [e.source, e.target])]);
+    return send(res, 200, { name: w.name, nodes: (w.nodes || []).filter((n) => near.has(keyOf(n.type, n.value))).map(({ x, y, ...n }) => n), edges });
   }
 
   const wm = pathname.match(/^\/api\/workspaces\/([^/]+)$/);

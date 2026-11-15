@@ -33,6 +33,22 @@ Options (environment variables): `PORT`, `HOST` (default `127.0.0.1`), `COMMUNIS
   same avatar used on two accounts is linked even if it was resized or re-encoded.
 - **Extract from text** – paste a report, log or e-mail; addresses, URLs, social profiles, IPs, domains,
   phone numbers and CVE ids are pulled out.
+- **Readable results** – the default *Organised* layout sorts each hub's neighbours by type and puts a
+  person's e-mail, phone, portrait and profiles directly behind that person. Roles and other key facts are
+  shown under the names (toggle in the sidebar). With nothing selected, the right panel is a sorted
+  overview: every person with role and contact details and an *Investigate* button, then all other
+  entities by type. A misclassified entity can be corrected with *Wrong type?*.
+- **Faces and pictures** – pictures on a page are checked for faces; faces in group pictures are cut out
+  as their own photo entities. Detection runs locally and finds frontal faces; it does not identify anyone.
+- **Edit by hand** – add, change or remove facts on any entity (role, employer, …), link further
+  information to it (an e-mail, a profile URL, an employer), attach photos, draw a link between two selected
+  entities, mark a candidate as verified. Searches and templates use hand-added data like anything else.
+- **Shared index across investigations** – an entity that also exists in another investigation gets a gold
+  double ring and an *Also in other investigations* box, from which its links can be copied over
+  (*Bring links here*) or the other investigation opened.
+- **News** – *News & press mentions* searches Google News for a region and, separately, only the news sites
+  you list in Settings (e.g. `tips.at`). Reading an article links it to every person and organisation
+  already in the graph that it mentions.
 - **Analysis** – select two nodes and *Show how they connect* traces the shortest path; search and type
   filters; several layouts; notes per entity; "look up elsewhere" links (Shodan, VirusTotal, reverse image
   search, …).
@@ -50,6 +66,8 @@ matching node):
 | Trace an e-mail address | e-mail | Gravatar and GitHub identities, mentions, mail domain, same handle on other sites |
 | Follow a username | username | Accounts on 16 sites, what they publish, which share an avatar |
 | Map a domain's infrastructure | domain | DNS, registration, certificates, subdomains, then servers, networks, ports and CVEs |
+| News & press coverage | person, organization, technology, phrase | Finds articles, reads the top ones and links them to known people and organisations they mention |
+| Technology exposure | technology | Known vulnerabilities and their details, recent news |
 | Profile an IP address | IP | Location, operator, exposed services, co-hosted sites |
 
 ![Result of the People behind a website template on a test site](docs/template-people.png)
@@ -70,6 +88,11 @@ entity types at each step.
 | Scrape web page | domain, URL, profile | target site | e-mails, phones, social profiles, people, images, technologies, linked sites |
 | Crawl site for people & contacts | domain, URL | target site (up to 14 pages) | people with role, e-mail, phone, portrait, profiles; shared contact details |
 | Find social profiles | person | DuckDuckGo | candidate LinkedIn, Facebook, X, Instagram, GitHub profiles |
+| Pictures of people on this page | domain, URL, profile | target site | pictures containing faces, individual face crops |
+| News & press mentions | person, organization, technology, phrase, … | Google News, your news sites via DuckDuckGo | articles with source and date |
+| WHOIS record | domain | registry WHOIS (port 43) | holder, contacts, address, name servers, dates; covers ccTLDs such as .at/.de |
+| Known vulnerabilities | technology | NVD | CVEs with severity for the product/version |
+| Vulnerability details | vulnerability | NVD | description, score, affected products, references |
 | Archived pages | domain | Wayback Machine | old URLs, documents, forgotten subdomains |
 | IP allocation | IP, netblock | rdap.org | netblock, holder, abuse contact |
 | IP geolocation & ASN | IP | ipwho.is | location, AS number, operator |
@@ -88,8 +111,8 @@ entity types at each step.
 | Analyse photo | photo | the image | GPS position, camera, date, fingerprint |
 | Phone country / Break apart | phone, e-mail, URL, … | local | country; parts of a value |
 
-None needs an API key. A GitHub token (Settings) only raises GitHub's rate limit.
-Three modules contact the target itself (*Scrape web page*, *Crawl site for people & contacts*, *TLS certificate*); all others query third parties.
+None needs an API key. News sites and region are set under Settings (gear icon). A GitHub token (Settings) only raises GitHub's rate limit.
+Four modules contact the target itself (*Scrape web page*, *Crawl site for people & contacts*, *Pictures of people on this page*, *TLS certificate*); all others query third parties.
 
 ### Adding a module
 
@@ -118,6 +141,9 @@ point the link at the input, and `props.confidence` to mark it as an unverified 
 
 - The server only listens on localhost and rejects requests from other origins. It fetches whatever URLs
   you point it at, so do not expose it to a network you do not trust.
+- The people crawler also reads imprint-style text: lines such as `Geschäftsführung: Mag. A B, DI C D`, names
+  carrying academic titles (Mag., Dr., DI (FH), Prof., MBA, …), `Name, Role` pairs, and company facts
+  (VAT/UID number, company register number and court, legal form, address).
 - The people crawler reads plain HTML. It recognises names in headings and structured data next to a role
   or contact detail; sites rendered by JavaScript, or unusual layouts, will be missed or need checking.
 - Results are leads, not facts: name matches (Wikidata, OpenAlex, GitHub by name) can be a different
@@ -130,3 +156,5 @@ point the link at the input, and `props.confidence` to mark it as an unverified 
 ```bash
 npm test
 ```
+
+The portrait used as a test fixture (`test/fixtures/portrait.png`) is a public-domain NASA photograph.

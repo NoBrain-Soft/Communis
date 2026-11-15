@@ -94,3 +94,62 @@ test('social profile search uses graph context and keeps only plausible profiles
   assert.equal(r.entities[0].props.confidence, 'candidate');
   assert.match(r.notes.join(' '), /other networks/);
 });
+
+test('section headings and company names are not people (German site)', async () => {
+  for (const bad of ['Unsere Ziele', 'Unser Nachhaltigkeitsbericht', 'Richter Pharma', 'Über Uns', 'Unsere Werte', 'Acme Holding', 'Notre Équipe', 'Quienes Somos'])
+    assert.equal(personName(bad), '', bad);
+  const about = `<html><body><h1>Über uns</h1>
+    <h2>Unsere Ziele</h2><p>Wir wollen wachsen. Unser Vertrieb und Marketing helfen dabei. office@richter-test.at</p>
+    <h2>Nordwind Handel</h2><p>Seit 1950 für Sie da.</p>
+    <h2>Geschäftsführung</h2>
+    <h3>Mag. Roland Huemer</h3><p>Geschäftsführer</p>
+    <h3>Stefan Reisinger</h3><p>Leiter Vertrieb</p><a href="mailto:stefan.reisinger@richter-test.at">E-Mail</a>
+    <h3>Marlene Pramhaas</h3><p>Seit 2019 im Team.</p>
+    <h3>Xyrq Zvolt</h3><p>Seit 2020 im Team.</p></body></html>`;
+  const http = { async raw(url) {
+    const html = { '/': '<html><head><meta property="og:site_name" content="Nordwind Handel"></head><body><a href="/ueber-uns">Über uns</a></body></html>', '/ueber-uns': about }[new URL(url).pathname];
+    if (html == null) throw new Error('404');
+    return page(url, html);
+  } };
+  const r = await runModule(mods.get('site_people'), { type: 'domain', value: 'nordwind-handel.test' }, {}, http);
+  const persons = Object.fromEntries(r.entities.filter((e) => e.type === 'person').map((e) => [e.value, e.props]));
+  assert.deepEqual(Object.keys(persons).sort(), ['Marlene Pramhaas', 'Roland Huemer', 'Stefan Reisinger']);
+  assert.equal(persons['Roland Huemer'].role, 'Geschäftsführer');
+  assert.equal(persons['Roland Huemer'].confidence, undefined);
+  assert.equal(persons['Stefan Reisinger'].role, 'Leiter Vertrieb');
+});
+
+test('titles, imprint lines and company facts (Austrian-style site)', async () => {
+  const { parseName, peopleInText, companyFacts, blockText } = await import('../server/lib/people.js');
+  assert.deepEqual(parseName('Mag. Roland Huemer, MBA'), { name: 'Roland Huemer', title: 'Mag. MBA' });
+  assert.deepEqual(parseName('DI (FH) Anna Berger'), { name: 'Anna Berger', title: 'DI (FH)' });
+  assert.deepEqual(parseName('Univ.-Prof. Dr. Karl Maier'), { name: 'Karl Maier', title: 'Univ.-Prof. Dr.' });
+  assert.equal(parseName('Dr.in Eva Novak').name, 'Eva Novak');
+  const html = `<html><body><h1>Impressum</h1><div><p><strong>Nordwind Pharma GmbH</strong><br>Feldgasse 19, 4600 Wels<br>Österreich</p>
+    <p>Geschäftsführung: Mag. Roland Huemer, DI Florian Fellinger und Dr. Petra Lang, MBA</p>
+    <p>Prokurist: Stefan Reisinger</p>
+    <p>Firmenbuchnummer: FN 123456 a<br>Firmenbuchgericht: Landesgericht Wels<br>UID-Nr.: ATU 12345678</p>
+    <p>Unser Vertrieb erreicht Sie unter office@nordwind-test.at. Ihre Ansprechpartnerin im Außendienst ist Marlene Pramhaas, Gebietsleiterin Oberösterreich.</p>
+    <p>Qualitätssicherung und Produkte seit 1949.</p></div></body></html>`;
+  const text = blockText(html);
+  const people = Object.fromEntries(peopleInText(text).map((p) => [p.name, p]));
+  assert.deepEqual(Object.keys(people).sort(), ['Florian Fellinger', 'Marlene Pramhaas', 'Petra Lang', 'Roland Huemer', 'Stefan Reisinger']);
+  assert.equal(people['Roland Huemer'].role, 'Geschäftsführung');
+  assert.equal(people['Roland Huemer'].title, 'Mag.');
+  assert.equal(people['Petra Lang'].title, 'Dr. MBA');
+  assert.equal(people['Stefan Reisinger'].role, 'Prokurist');
+  assert.equal(people['Marlene Pramhaas'].role, 'Gebietsleiterin Oberösterreich');
+  assert.deepEqual(companyFacts(text), { vat_id: 'ATU 12345678', company_register: '123456 a', register_court: 'Landesgericht Wels', legal_form: 'GmbH', address: 'Feldgasse 19, 4600 Wels' });
+
+  const http = { async raw(url) {
+    const h = { '/': '<html><head><meta property="og:site_name" content="Nordwind Pharma"></head><body><a href="/impressum">Impressum</a></body></html>', '/impressum': html }[new URL(url).pathname];
+    if (h == null) throw new Error('404');
+    return page(url, h);
+  } };
+  const r = await runModule(mods.get('site_people'), { type: 'domain', value: 'nordwind-pharma.test' }, {}, http);
+  const by = Object.fromEntries(r.entities.map((e) => [e.key, e]));
+  assert.equal(by['person:roland huemer'].props.title, 'Mag.');
+  assert.equal(by['organization:nordwind pharma'].props.vat_id, 'ATU 12345678');
+  assert.ok(by['location:feldgasse 19, 4600 wels']);
+  assert.equal(r.entities.filter((e) => e.type === 'person').length, 5);
+});

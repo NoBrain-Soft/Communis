@@ -1,4 +1,5 @@
 import tls from 'node:tls';
+import { ddg } from '../lib/search.js';
 import { extractFromHtml, socialProfile } from '../lib/extract.js';
 import { isIP, registrableDomain } from '../../shared/entities.js';
 
@@ -7,6 +8,18 @@ const SIGNATURES = [
   [/\/_nuxt\//, 'Nuxt'], [/drupal-settings-json|\/sites\/default\/files/i, 'Drupal'], [/\/media\/jui\/|com_content/i, 'Joomla'],
   [/static\.wixstatic\.com/i, 'Wix'], [/squarespace\.com/i, 'Squarespace'], [/ghost\.(io|org)|content="Ghost/i, 'Ghost'],
   [/googletagmanager\.com/i, 'Google Tag Manager'], [/js\.hs-scripts\.com|hubspot/i, 'HubSpot'], [/webflow/i, 'Webflow'],
+  [/typo3conf|typo3temp|\/typo3\//i, 'TYPO3'], [/\/bundles\/contao|contao/i, 'Contao'], [/matomo\.js|piwik\.js/i, 'Matomo'],
+  [/google-analytics\.com|gtag\(/i, 'Google Analytics'], [/consent\.cookiebot\.com/i, 'Cookiebot'], [/cdn\.cookielaw\.org|onetrust/i, 'OneTrust'],
+  [/borlabs-cookie/i, 'Borlabs Cookie'], [/\/wp-content\/plugins\/elementor/i, 'Elementor'], [/woocommerce/i, 'WooCommerce'],
+  [/Magento|\/static\/version\d+\/frontend/i, 'Magento'], [/shopware/i, 'Shopware'], [/google\.com\/recaptcha/i, 'reCAPTCHA'],
+  [/fontawesome|font-awesome/i, 'Font Awesome'], [/data-reactroot|react-dom/i, 'React'], [/ng-version=|angular(?:\.min)?\.js/i, 'Angular'],
+  [/vue(?:\.runtime)?(?:\.min)?\.js|data-v-[0-9a-f]{8}/i, 'Vue.js'], [/connect\.facebook\.net/i, 'Meta Pixel'], [/static\.hotjar\.com/i, 'Hotjar'],
+  [/cdn\.jsdelivr\.net/i, 'jsDelivr'], [/js\.stripe\.com/i, 'Stripe'], [/livewire/i, 'Laravel Livewire'], [/sites\/all\/modules/i, 'Drupal'],
+];
+// libraries whose version shows in the file name or path
+const VERSIONED = [
+  [/jquery[.-](\d+\.\d+(?:\.\d+)?)(?:\.min)?\.js/i, 'jQuery'], [/jquery\/(\d+\.\d+\.\d+)\//i, 'jQuery'], [/bootstrap[@/.-](\d+\.\d+(?:\.\d+)?)/i, 'Bootstrap'],
+  [/jquery-ui[.-](\d+\.\d+(?:\.\d+)?)/i, 'jQuery UI'], [/wp-includes\/[^"']+\?ver=(\d+\.\d+(?:\.\d+)?)/i, 'WordPress'], [/swiper@(\d+)/i, 'Swiper'],
 ];
 const HEADER_TECH = [
   ['cf-ray', 'Cloudflare'], ['x-vercel-id', 'Vercel'], ['x-github-request-id', 'GitHub Pages'], ['x-amz-cf-id', 'Amazon CloudFront'],
@@ -16,23 +29,6 @@ const HEADER_TECH = [
 const ASSET = /\.(css|js|png|jpe?g|gif|svg|ico|woff2?|ttf|eot|map|webp|mp4|json|xml|txt)(\?|$)/i;
 const DOCUMENT = /\.(pdf|docx?|xlsx?|pptx?|csv|zip|sql|bak|env|conf|log)(\?|$)/i;
 
-/** DuckDuckGo HTML results as [{ href, title }]. */
-async function ddg(query, ctx) {
-  const html = await ctx.http.text(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, { headers: { accept: 'text/html', 'accept-language': 'en' } });
-  const out = [];
-  const seen = new Set();
-  for (const m of html.matchAll(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)) {
-    let href = m[1].replace(/&amp;/g, '&');
-    const redirect = href.match(/[?&]uddg=([^&]+)/);
-    if (redirect) href = decodeURIComponent(redirect[1]);
-    if (!/^https?:/.test(href) || seen.has(href) || /duckduckgo\.com\/y\.js/.test(href)) continue;
-    seen.add(href);
-    out.push({ href, title: m[2].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&quot;/g, '"').trim() });
-  }
-  if (!out.length && /anomaly|captcha|challenge/i.test(html)) throw new Error('DuckDuckGo is rate-limiting automated searches right now. Try again later or use the search links below.');
-  return out;
-}
-
 const fold = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 export default [
@@ -40,7 +36,7 @@ export default [
     id: 'web_scrape', name: 'Scrape web page', group: 'Web', source: 'target site',
     description: 'Fetches the page and extracts e-mails, phone numbers, social profiles, people, images, technologies and linked sites.',
     inputs: ['domain', 'url', 'profile'], active: true,
-    async run({ type, value }, ctx) {
+    async run({ type, value, context }, ctx) {
       let r;
       const opts = { maxBytes: 1_500_000, headers: { accept: 'text/html,*/*;q=0.8', 'accept-language': 'en' }, okStatuses: [401, 403, 404] };
       if (type === 'domain') {
@@ -70,6 +66,11 @@ export default [
         if (x.description) props.description = x.description;
         if (x.generator) tech.add(x.generator.slice(0, 60));
         SIGNATURES.forEach(([re, t]) => re.test(html) && tech.add(t));
+        VERSIONED.forEach(([re, t]) => { const v = html.match(re); if (v) tech.add(`${t} ${v[1]}`); });
+        [...new Set([...html.matchAll(/\/wp-content\/plugins\/([a-z0-9-]{3,40})\//gi)].map((m) => m[1].toLowerCase()))].slice(0, 8).forEach((pl) => tech.add(`WordPress plugin: ${pl}`));
+        // names already in the graph that this page talks about
+        const plain = html.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').toLowerCase();
+        for (const k of context?.known || []) if (k.value.length >= 5 && plain.includes(k.value.toLowerCase())) entities.push({ type: k.type, value: k.value, rel: 'mentions' });
         x.emails.slice(0, 25).forEach((e) => entities.push({ type: 'email', value: e, rel: 'mentions' }));
         x.phones.slice(0, 10).forEach((p) => entities.push({ type: 'phone', value: p, rel: 'mentions' }));
         x.profiles.slice(0, 20).forEach((p) => entities.push({ type: 'profile', value: p.url, label: `${p.site}: ${p.username}`, rel: 'links to profile', props: { site: p.site, username: p.username } }));

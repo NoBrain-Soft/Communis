@@ -50,12 +50,13 @@ const cy = cytoscape({
       'background-width': '54%', 'background-height': '54%',
       shape: (n) => (n.data('type') === 'photo' ? 'round-rectangle' : 'ellipse'),
       width: 'data(size)', height: 'data(size)',
-      label: 'data(display)', color: '#c9d3df', 'font-size': 12, 'text-valign': 'bottom', 'text-margin-y': 5,
-      'text-wrap': 'ellipsis', 'text-max-width': 150, 'text-outline-color': BG, 'text-outline-width': 2, 'min-zoomed-font-size': 6,
+      label: 'data(text)', color: '#c9d3df', 'font-size': 12, 'text-valign': 'bottom', 'text-margin-y': 5,
+      'text-wrap': 'wrap', 'text-max-width': 420, 'line-height': 1.25, 'text-outline-color': BG, 'text-outline-width': 2, 'min-zoomed-font-size': 6,
       'border-width': 0, 'overlay-opacity': 0,
     } },
     { selector: 'node.guess', style: { opacity: 0.6, 'border-width': 2, 'border-style': 'dashed', 'border-color': '#ffffff' } },
     { selector: 'node.running', style: { 'underlay-color': '#4aa8ff', 'underlay-opacity': 0.35, 'underlay-padding': 9, 'underlay-shape': 'ellipse' } },
+    { selector: 'node.xref', style: { 'border-width': 3, 'border-style': 'double', 'border-color': '#ffd166' } },
     { selector: 'node:selected', style: { 'border-width': 3, 'border-style': 'solid', 'border-color': '#ffffff', opacity: 1, color: '#ffffff' } },
     { selector: 'edge', style: {
       width: 1.2, 'line-color': '#364354', 'target-arrow-color': '#364354', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.8, 'curve-style': 'bezier',
@@ -103,7 +104,7 @@ function upsert(ent, near, source) {
   const p = near || (bb ? { x: bb.x2 + 140, y: bb.y1 + bb.h / 2 + (Math.random() - 0.5) * Math.max(bb.h, 200) } : { x: 0, y: 0 });
   const n = cy.add({
     group: 'nodes',
-    data: { id: key, type: ent.type, value, label: ent.label || '', display: displayOf(ent.type, value, ent.label), props: { ...ent.props }, sources: source ? [source] : [], notes: ent.notes || '', size: 32 },
+    data: { id: key, type: ent.type, value, label: ent.label || '', display: displayOf(ent.type, value, ent.label), text: '', seq: ++seq, props: { ...ent.props }, sources: source ? [source] : [], notes: ent.notes || '', size: 32 },
     position: ent.x != null ? { x: ent.x, y: ent.y } : { x: p.x + (Math.random() - 0.5) * 120, y: p.y + (Math.random() - 0.5) * 120 },
   });
   if (ent.props?.confidence) n.addClass('guess');
@@ -117,6 +118,26 @@ function addEdge(a, b, label, module) {
   if (cy.getElementById(id).length || cy.getElementById(`${b}→${a}→${label}`).length) return false;
   cy.add({ group: 'edges', data: { id, source: a, target: b, label, module } });
   return true;
+}
+
+let seq = 0;
+
+/** Second line under a node's name: the most telling fact we know about it. */
+function subLabel(d) {
+  const p = d.props;
+  const t = { person: p.role || p.job_title || p.occupation || p.description, profile: p.display_name || p.title, domain: p.title, url: p.title,
+    ip: [p.isp, p.country].filter(Boolean).join(', '), asn: p.holder, netblock: p.name, photo: p.taken, location: p.precision && p.lat != null ? '' : p.place_type }[d.type];
+  const s = String(t || '').replace(/\s+/g, ' ').trim();
+  return s.length > 40 ? `${s.slice(0, 39)}…` : s;
+}
+function refreshTexts() {
+  const show = $('#show-sub').checked;
+  cy.batch(() => cy.nodes().forEach((n) => {
+    const d = n.data();
+    const base = d.display.length > 30 ? `${d.display.slice(0, 29)}…` : d.display;
+    const sub = show ? subLabel(d) : '';
+    n.data('text', sub ? `${base}\n${sub}` : base);
+  }));
 }
 
 function refreshSizes() {
@@ -164,10 +185,13 @@ function merge(inputKey, moduleId, result) {
 }
 
 function afterChange(added = []) {
+  scheduleXref();
   linkMatchingPhotos();
   refreshSizes();
+  refreshTexts();
   renderLegend();
   if (added.length) scheduleLayout(added);
+  if (!selected().length) renderDetails(); // keep the overview list current
   scheduleSave();
   $('#empty').hidden = cy.nodes().length > 0;
 }
@@ -181,12 +205,87 @@ function scheduleLayout(keys) {
   layoutTimer = setTimeout(() => { const fresh = pendingNew; pendingNew = new Set(); runLayout(fresh); }, 200);
 }
 
+const TYPE_ORDER = Object.keys(TYPES);
+const DETAIL_TYPES = new Set(['email', 'phone', 'photo', 'profile', 'username']);
+
+/**
+ * "Organised" layout: each connected group becomes a wheel around its first entity. Neighbours are sorted
+ * by type and name, and whatever belongs to an entity (a person's e-mail, phone, portrait...) sits
+ * directly behind it, further out on the same spoke.
+ */
+function organisedPositions() {
+  const nodes = cy.nodes().not('.hidden').sort((a, b) => a.data('seq') - b.data('seq'));
+  const order = (a, b) => TYPE_ORDER.indexOf(a.data('type')) - TYPE_ORDER.indexOf(b.data('type'))
+    || (a.data('props').confidence ? 1 : 0) - (b.data('props').confidence ? 1 : 0) || a.data('display').localeCompare(b.data('display'));
+  const pos = {};
+  const seen = new Set();
+  let cursorX = 0;
+  nodes.forEach((root) => {
+    if (seen.has(root.id())) return;
+    const parent = new Map([[root.id(), null]]);
+    const kids = new Map();
+    const queue = [root];
+    seen.add(root.id());
+    for (let i = 0; i < queue.length; i++) {
+      const n = queue[i];
+      kids.set(n.id(), []);
+      n.neighborhood('node').not('.hidden').sort(order).forEach((k) => {
+        if (seen.has(k.id())) return;
+        seen.add(k.id()); parent.set(k.id(), n); kids.get(n.id()).push(k); queue.push(k);
+      });
+    }
+    // a contact detail that is linked to both the hub and a person belongs next to the person
+    for (const n of queue) {
+      const par = parent.get(n.id());
+      if (!par || kids.get(n.id()).length || !DETAIL_TYPES.has(n.data('type')) || par.data('type') === 'person') continue;
+      const owner = n.neighborhood('node[type = "person"]').not('.hidden').filter((x) => parent.has(x.id()) && x.id() !== par.id())[0];
+      if (!owner) continue;
+      kids.set(par.id(), kids.get(par.id()).filter((x) => x.id() !== n.id()));
+      kids.get(owner.id()).push(n);
+      kids.get(owner.id()).sort(order);
+      parent.set(n.id(), owner);
+    }
+    const leaves = new Map();
+    const count = (n) => { const c = kids.get(n.id()); const v = c.length ? c.reduce((t, k) => t + count(k), 0) : 1; leaves.set(n.id(), v); return v; };
+    count(root);
+    const place = (n, depth, a0, a1) => {
+      pos[n.id()] = { angle: (a0 + a1) / 2, depth };
+      let at = a0;
+      for (const k of kids.get(n.id())) { const span = ((a1 - a0) * leaves.get(k.id())) / leaves.get(n.id()); place(k, depth + 1, at, at + span); at += span; }
+    };
+    place(root, 0, -Math.PI / 2, Math.PI * 1.5);
+    // each ring is only as wide as its most crowded stretch needs
+    const rings = [];
+    queue.forEach((n) => { (rings[pos[n.id()].depth] ||= []).push(pos[n.id()].angle); });
+    const radius = [0];
+    for (let d = 1; d < rings.length; d++) {
+      const a = rings[d].sort((x, y) => x - y);
+      let gap = a.length > 1 ? 2 * Math.PI - (a[a.length - 1] - a[0]) : 2 * Math.PI;
+      for (let i = 1; i < a.length; i++) gap = Math.min(gap, a[i] - a[i - 1]);
+      radius[d] = Math.max(radius[d - 1] + (d === 1 ? 200 : 160), 105 / gap);
+    }
+    queue.forEach((n) => { const q = pos[n.id()]; q.x = Math.cos(q.angle) * radius[q.depth]; q.y = Math.sin(q.angle) * radius[q.depth]; });
+    const reach = Math.max(...queue.map((n) => Math.hypot(pos[n.id()].x, pos[n.id()].y))) + 110;
+    cursorX += reach;
+    queue.forEach((n) => { pos[n.id()].x += cursorX; });
+    cursorX += reach + 60;
+  });
+  return pos;
+}
+
 /** Without arguments re-arranges everything; with a set of new keys keeps existing nodes where they are. */
 function runLayout(fresh) {
   const visible = cy.elements().not('.hidden');
   if (visible.nodes().length < 2) { if (visible.nodes().length) cy.animate({ center: { eles: visible }, zoom: 1 }, { duration: 200 }); return; }
-  const name = $('#layout-select').value;
+  let name = $('#layout-select').value;
+  // tree-like graphs read best as organised wheels, heavily cross-linked ones as a force layout
+  if (name === 'auto') name = visible.edges().length <= visible.nodes().length * 1.3 ? 'radial' : 'fcose';
   const anim = { animate: true, animationDuration: 450 };
+  if (name === 'radial') {
+    const pos = organisedPositions();
+    visible.layout({ name: 'preset', positions: (n) => pos[n.id()], fit: true, padding: 70, ...anim }).run();
+    return;
+  }
   if (name !== 'fcose') {
     const extra = { concentric: { concentric: (n) => n.degree(false), levelWidth: () => 2, minNodeSpacing: 40 }, breadthfirst: { spacingFactor: 1.1, directed: false }, circle: {}, grid: { avoidOverlapPadding: 30 } }[name];
     visible.layout({ name, fit: true, padding: 50, ...anim, ...extra }).run();
@@ -242,7 +341,9 @@ async function runModule(key, modId) {
   return enqueue(async () => {
     let res;
     const near = (type) => node(key).neighborhood(`node[type = "${type}"]`).filter((x) => !x.data('props').confidence).map((x) => x.data('value')).slice(0, 5);
-    const context = d.type === 'person' ? { orgs: near('organization'), domains: near('domain') } : undefined;
+    const own = [d.props.employer, d.props.company, d.props.organization].filter(Boolean).map(String);
+    const context = d.type === 'person' ? { orgs: [...own, ...near('organization')], domains: near('domain') }
+      : ['url', 'domain', 'profile'].includes(d.type) ? { known: cy.nodes('[type = "person"], [type = "organization"]').filter((x) => !x.data('props').confidence).map((x) => ({ type: x.data('type'), value: x.data('value') })).slice(0, 400) } : undefined;
     try { res = await api('/api/run', { method: 'POST', body: { module: modId, entity: { type: d.type, value: d.value, props: d.props, context } } }); }
     catch (e) { res = { ok: false, error: e.message }; }
     if (!node(key).length) return [];
@@ -291,7 +392,7 @@ async function discover(rootKey, depth = 2) {
 const templatesFor = (type) => TEMPLATES.filter((t) => t.inputs.includes(type));
 
 /** Runs a template's steps in order; each step works on what the earlier steps found. */
-async function runTemplate(tpl, rootKey) {
+async function runTemplate(tpl, rootKey, { quiet = false } = {}) {
   const root = node(rootKey);
   if (!root.length) return;
   const scope = new Set([rootKey]);
@@ -318,7 +419,8 @@ async function runTemplate(tpl, rootKey) {
     (await Promise.all(jobs)).flat().forEach((k) => scope.add(k));
   }
   const people = [...scope].filter((k) => node(k).length && node(k).data('type') === 'person' && k !== rootKey).length;
-  log(`Template “${tpl.name}” finished: ${scope.size - 1} new entities${people ? `, ${people} of them people. Select a person and run “Investigate a person” to go deeper` : ''}.`, 'step');
+  log(`Template “${tpl.name}” finished: ${scope.size - 1} new entities${people ? `, ${people} of them people. They are listed on the right, each with an Investigate button` : ''}.`, 'step');
+  if (!quiet && people) cy.elements().unselect(); // back to the overview, which lists the people and the next step for each
   // let the last layout pass settle before framing the result
   setTimeout(() => cy.animate({ fit: { eles: cy.elements().not('.hidden'), padding: 60 } }, { duration: 300 }), 900);
 }
@@ -389,21 +491,24 @@ function renderDetails() {
   box.replaceChildren();
 
   if (sel.length === 0) {
-    box.append(h('div', { class: 'd-empty' },
-      h('h3', {}, 'Nothing selected'),
-      h('p', {}, 'Click a node to see what is known about it and which searches can be run on it.'),
+    if (cy.nodes().length) renderOverview(box);
+    else box.append(h('div', { class: 'd-empty' },
+      h('h3', {}, 'Nothing here yet'),
+      h('p', {}, 'Add a first entity or start from a template. What is found is listed here, sorted, with the next step for each item.'),
       h('ul', {},
-        h('li', {}, 'Right-click a node for a quick menu.'),
+        h('li', {}, 'Click a node to see what is known about it; right-click for a quick menu.'),
         h('li', {}, h('kbd', {}, 'Shift'), ' + click or drag selects several nodes; with two selected you can trace how they are connected.'),
         h('li', {}, h('kbd', {}, 'Delete'), ' removes the selection, ', h('kbd', {}, '/'), ' jumps to the add box.'),
         h('li', {}, 'Dashed, see-through nodes are guesses or unverified candidates.'))));
+    box.scrollTop = scroll;
     return;
   }
 
   if (sel.length > 1) {
     box.append(h('div', { class: 'd-head' }, h('div', {}, h('div', { class: 'd-value' }, `${sel.length} entities selected`))));
     const actions = h('div', { class: 'd-actions' });
-    if (sel.length === 2) actions.append(h('button', { class: 'primary', onclick: () => showPath(sel[0], sel[1]) }, 'Show how they connect'));
+    if (sel.length === 2) actions.append(h('button', { class: 'primary', onclick: () => showPath(sel[0], sel[1]) }, 'Show how they connect'),
+      h('button', { title: 'Draw a link between the two yourself', onclick: () => { const label = prompt(`How is ${sel[0].data('display')} related to ${sel[1].data('display')}?`, 'associated with'); if (label && addEdge(sel[0].id(), sel[1].id(), label.slice(0, 60), 'manual')) afterChange(); } }, 'Link them…'));
     actions.append(
       h('button', { onclick: () => sel.forEach((n) => runAll(n.id())) }, 'Run all searches'),
       h('button', { class: 'danger', onclick: () => removeNodes(sel) }, 'Delete'));
@@ -423,26 +528,69 @@ function renderDetails() {
   if (d.type === 'photo') box.append(h('img', { class: 'd-photo', src: imgUrl(d.value), alt: 'Photo preview', loading: 'lazy' }));
 
   const mods = modulesFor(d.type);
+  const tpls = templatesFor(d.type);
   box.append(h('div', { class: 'd-actions' },
-    h('button', { class: 'primary', disabled: !mods.length, onclick: () => runAll(key), title: 'Run every automatic search below' }, 'Run all searches'),
+    tpls.map((t, i) => h('button', { class: `wide-btn${i === 0 ? ' primary' : ''}`, title: t.description, onclick: () => runTemplate(t, key) },
+      t.action, h('small', {}, t.steps.map((st) => st.label.toLowerCase()).join(' → ')))),
+    h('button', { class: tpls.length ? '' : 'primary', disabled: !mods.length, onclick: () => runAll(key), title: 'Run every automatic search listed below, once' }, 'Run all searches'),
     h('button', { disabled: !mods.length, onclick: () => discover(key, 2), title: 'Run all searches here, then again on everything they find' }, 'Discover 2 levels'),
     h('button', { class: 'danger', onclick: () => removeNodes(n) }, 'Delete')));
 
-  const tpls = templatesFor(d.type);
-  if (tpls.length) {
-    box.append(h('h2', {}, 'Templates'), h('div', { class: 'tpl-btns' },
-      tpls.map((t) => h('button', { onclick: () => runTemplate(t, key) }, t.name, h('small', {}, `${t.description.split('. ')[0].replace(/\.$/, '')}.`)))));
+  const hits = xref[key];
+  if (hits?.length) {
+    box.append(h('h2', {}, 'Also in other investigations'));
+    for (const hit of hits) {
+      box.append(h('div', { class: 'xref' }, h('div', {}, h('b', {}, hit.name), ` · ${hit.links} link${hit.links === 1 ? '' : 's'} there`),
+        hit.notes ? h('div', { class: 'muted' }, hit.notes) : null,
+        h('div', { class: 'btn-row' },
+          h('button', { title: 'Copy what that investigation links to this entity into this graph', onclick: () => importAround(hit, key) }, 'Bring links here'),
+          h('button', { onclick: () => openWorkspace(hit.id).then(() => node(key).length && focusNode(node(key))) }, 'Open it'))));
+    }
   }
 
+  const setProp = (k, v) => {
+    const next = { ...n.data('props') };
+    if (v === undefined) delete next[k]; else next[k] = v;
+    n.data('props', next);
+    n.toggleClass('guess', !!next.confidence);
+    afterChange();
+    renderDetails();
+  };
   const props = Object.entries(d.props).filter(([k, v]) => k !== 'confidence' && v != null && v !== '');
+  box.append(h('h2', {}, 'Known facts'));
   if (props.length) {
     const dl = h('dl', { class: 'props' });
     for (const [k, v] of props) {
-      const s = String(v);
-      dl.append(h('dt', {}, k.replace(/_/g, ' ')), h('dd', {}, /^https?:\/\/\S+$/.test(s) ? extLink(s, s.replace(/^https?:\/\/(www\.)?/, '')) : s));
+      const str = String(v);
+      dl.append(h('dt', {}, k.replace(/_/g, ' ')), h('dd', {},
+        /^https?:\/\/\S+$/.test(str) ? extLink(str, str.replace(/^https?:\/\/(www\.)?/, '')) : h('span', {}, str),
+        h('button', { class: 'x-btn', title: `Remove “${k.replace(/_/g, ' ')}”`, 'aria-label': `Remove ${k}`, onclick: () => setProp(k, undefined) }, '×')));
     }
-    box.append(h('h2', {}, 'Known facts'), dl);
+    box.append(dl);
   }
+  if (d.props.confidence) box.append(h('div', { class: 'd-actions', style: 'margin-top:8px' }, h('button', { onclick: () => setProp('confidence', undefined), title: 'You checked it: treat this entity as confirmed from now on' }, 'Mark as verified')));
+  const factKey = h('input', { type: 'text', placeholder: 'fact (e.g. role)', 'aria-label': 'Fact name', list: 'fact-names' });
+  const factVal = h('input', { type: 'text', placeholder: 'value', 'aria-label': 'Fact value' });
+  box.append(h('form', { class: 'mini-form', onsubmit: (e) => {
+    e.preventDefault();
+    const k = factKey.value.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, '');
+    if (k && factVal.value.trim() && k !== 'confidence') setProp(k, factVal.value.trim());
+  } }, factKey, factVal, h('button', { type: 'submit' }, 'Add fact'),
+  h('datalist', { id: 'fact-names' }, ['role', 'title', 'employer', 'city', 'date_of_birth', 'nickname', 'description', 'nationality', 'language'].map((x) => h('option', { value: x })))));
+
+  // attach further entities by hand; searches and templates then use them like anything found automatically
+  const DEFAULT_REL = { email: 'email', phone: 'phone', photo: 'photo', profile: 'profile', username: 'handle', organization: 'works at', location: 'located in', person: 'associated with', domain: 'website', url: 'mentioned in', technology: 'uses' };
+  const linkVal = h('input', { type: 'text', placeholder: 'e-mail, phone, profile URL, employer…', 'aria-label': 'Value to link', spellcheck: 'false' });
+  const linkType = h('select', { 'aria-label': 'Type of the linked entity' }, h('option', { value: 'auto' }, 'Auto-detect'), Object.entries(TYPES).map(([k, t]) => h('option', { value: k }, t.label)));
+  const linkRel = h('input', { type: 'text', placeholder: 'relation (optional)', 'aria-label': 'Relation' });
+  box.append(h('h2', {}, 'Add linked information'), h('form', { class: 'mini-form', onsubmit: (e) => {
+    e.preventDefault();
+    const v = linkVal.value.trim();
+    if (!v) return;
+    const type = linkType.value === 'auto' ? detectType(v) : linkType.value;
+    linkTo(key, { type, value: v }, linkRel.value.trim() || DEFAULT_REL[type] || 'related to');
+  } }, linkVal, linkType, linkRel, h('button', { type: 'submit' }, 'Link'),
+  h('button', { type: 'button', title: 'Add a picture from your computer to this entity', onclick: () => { attachTo = key; $('#file-attach').click(); } }, 'Attach photo…')));
 
   if (mods.length) {
     box.append(h('h2', {}, 'Searches'));
@@ -472,8 +620,113 @@ function renderDetails() {
   }
   if (d.sources.length) box.append(h('h2', {}, 'Found by'), h('div', { class: 'muted' }, d.sources.map((s) => modById(s)?.name || (s === 'manual' ? 'Added by hand' : s === 'text' ? 'Text extraction' : s)).join(', ')));
 
+  box.append(h('label', { class: 'retype' }, 'Wrong type?',
+    h('select', { onchange: (e) => retype(n, e.target.value) }, Object.entries(TYPES).map(([k, t]) => h('option', { value: k, selected: k === d.type }, t.label)))));
+
   box.scrollTop = scroll;
   if (focusedNotes) { const t = $('#notes'); t.focus(); t.setSelectionRange(caret, caret); }
+}
+
+let xref = {}; // node key → other investigations that contain the same entity
+let attachTo = null;
+let xrefTimer = null;
+
+/** Ask the shared index which entities of this graph also appear in other investigations. */
+async function refreshXref() {
+  if (!ws) return;
+  try {
+    const keys = cy.nodes().filter((n) => !n.data('props').confidence).map((n) => n.id());
+    const before = JSON.stringify(Object.keys(xref).sort());
+    xref = keys.length ? (await api('/api/xref', { method: 'POST', body: { workspace: ws.id, keys } })).hits : {};
+    cy.batch(() => cy.nodes().forEach((n) => n.toggleClass('xref', !!xref[n.id()])));
+    if (before !== JSON.stringify(Object.keys(xref).sort())) renderDetails();
+  } catch { /* the index is a convenience; the graph works without it */ }
+}
+const scheduleXref = () => { clearTimeout(xrefTimer); xrefTimer = setTimeout(refreshXref, 1500); };
+
+/** Copy an entity's direct links from another investigation into this one. */
+async function importAround(hit, key) {
+  try {
+    const data = await api(`/api/workspaces/${hit.id}/around?key=${encodeURIComponent(key)}`);
+    const added = [];
+    cy.batch(() => {
+      for (const n of data.nodes) { const r = upsert(n, node(key).position(), 'xref'); if (r?.isNew) added.push(r.key); }
+      for (const e of data.edges) addEdge(e.source, e.target, e.label, e.module);
+    });
+    afterChange(added);
+    log(`Brought ${data.nodes.length - 1} linked entities over from “${data.name}” (${added.length} new here).`);
+  } catch (e) { log(`Could not read the other investigation: ${e.message}`, 'err'); }
+}
+
+/** Attach an entity to an existing node by hand. */
+function linkTo(key, ent, rel) {
+  const r = upsert(ent, node(key).position(), 'manual');
+  if (!r) { log(`"${ent.value}" is not a valid ${TYPES[ent.type].label.toLowerCase()}.`, 'err'); return null; }
+  addEdge(key, r.key, rel, 'manual');
+  afterChange(r.isNew ? [r.key] : []);
+  renderDetails();
+  return r.key;
+}
+
+async function uploadPhoto(file) {
+  const res = await fetch('/api/upload', { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: file });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error);
+  return j.value;
+}
+
+/** Nothing selected: everything found so far as a sorted list, people first, each with its next step. */
+function renderOverview(box) {
+  const byName = (a, b) => (a.data('props').confidence ? 1 : 0) - (b.data('props').confidence ? 1 : 0) || a.data('display').localeCompare(b.data('display'));
+  const people = cy.nodes('[type = "person"]').not('.hidden').sort(byName);
+  const personTpl = TEMPLATES.find((t) => t.id === 'person');
+  box.append(h('div', { class: 'd-head' }, h('div', {}, h('div', { class: 'd-value' }, 'Overview'), h('div', { class: 'd-label' }, 'Everything found so far. Click a name to open it.'))));
+  const shared = cy.nodes('.xref').not('.hidden').sort(byName);
+  if (shared.length) {
+    box.append(h('h2', {}, `Seen in other investigations (${shared.length})`));
+    shared.forEach((n) => box.append(connRow(n, xref[n.id()].map((x) => x.name).join(', '))));
+  }
+  if (people.length) {
+    const sure = people.filter((n) => !n.data('props').confidence);
+    box.append(h('h2', {}, `People (${people.length})`));
+    if (sure.length > 1) box.append(h('div', { class: 'd-actions', style: 'margin:0 0 8px' },
+      h('button', { title: 'Runs “Investigate a person” on each confirmed person, one after the other', onclick: async () => { for (const n of sure.toArray()) await runTemplate(personTpl, n.id(), { quiet: true }); } }, `Investigate all ${sure.length} confirmed people`)));
+    people.forEach((n) => {
+      const d = n.data();
+      const near = (type) => n.neighborhood(`node[type = "${type}"]`).map((x) => x.data('value'));
+      const facts = [...near('email'), ...near('phone'), ...n.neighborhood('node[type = "profile"]').map((x) => x.data('display'))];
+      box.append(h('div', { class: `ov-person${d.props.confidence ? ' cand' : ''}` }, chip('person'),
+        h('button', { class: 'ov-name', title: 'Open', onclick: () => focusNode(n) }, d.display, subLabel(d) ? h('span', { class: 'ov-role' }, subLabel(d)) : null, d.props.confidence ? h('span', { class: 'badge' }, 'unverified') : null),
+        h('div', { class: 'ov-facts' }, facts.length ? facts.join(' · ') : 'no contact details found'),
+        h('button', { title: personTpl.description, onclick: () => { focusNode(n); runTemplate(personTpl, n.id()); } }, 'Investigate')));
+    });
+  }
+  for (const type of TYPE_ORDER.filter((t) => t !== 'person')) {
+    const list = cy.nodes(`[type = "${type}"]`).not('.hidden').sort(byName);
+    if (!list.length) continue;
+    box.append(h('details', { class: 'ov-group', open: list.length <= 6 && ['email', 'phone', 'profile', 'organization'].includes(type) },
+      h('summary', {}, chip(type), TYPES[type].label, h('span', { class: 'n' }, list.length)),
+      list.map((n) => connRow(n, subLabel(n.data()) || n.neighborhood('node[type = "person"]').map((x) => x.data('display')).join(', ')))));
+  }
+}
+
+/** Correct a misclassified entity (e.g. a company the crawler took for a person) without losing its links. */
+function retype(n, type) {
+  const d = n.data();
+  const key = keyOf(type, d.value);
+  if (!key) { log(`"${d.value}" cannot be a ${TYPES[type].label.toLowerCase()}.`, 'err'); return renderDetails(); }
+  if (key === n.id()) return;
+  if (node(key).length) { log(`${d.display} already exists as a ${TYPES[type].label.toLowerCase()}.`, 'note'); return renderDetails(); }
+  const edges = n.connectedEdges().map((e) => ({ ...e.data() }));
+  const { confidence, role, ...props } = d.props;
+  upsert({ type, value: d.value, label: d.label, props, notes: d.notes, x: n.position('x'), y: n.position('y') }, null, d.sources[0]);
+  node(key).data('sources', d.sources);
+  cy.remove(n);
+  edges.forEach((e) => addEdge(e.source === d.id ? key : e.source, e.target === d.id ? key : e.target, e.label, e.module));
+  afterChange();
+  cy.elements().unselect();
+  node(key).select();
+  log(`${d.display} is now a ${TYPES[type].label.toLowerCase()}.`);
 }
 
 function connRow(n, rel) {
@@ -593,6 +846,7 @@ function loadGraph(data) {
     for (const e of data.edges || []) addEdge(e.source, e.target, e.label, e.module);
   });
   refreshSizes();
+  refreshTexts();
   renderLegend();
   renderDetails();
   $('#empty').hidden = cy.nodes().length > 0;
@@ -614,7 +868,9 @@ async function openWorkspace(id) {
   ws = { id: w.id, name: w.name };
   try { localStorage.setItem('communis.ws', w.id); } catch { /* storage unavailable */ }
   $('#ws-select').value = w.id;
+  xref = {};
   loadGraph(w);
+  refreshXref();
 }
 
 async function createWorkspace(name, data = {}) {
@@ -738,6 +994,7 @@ $('#search').addEventListener('keydown', (e) => {
 });
 
 $('#btn-layout').addEventListener('click', () => runLayout());
+$('#show-sub').addEventListener('change', refreshTexts);
 $('#layout-select').addEventListener('change', () => runLayout());
 $('#btn-fit').addEventListener('click', () => cy.animate({ fit: { eles: cy.elements().not('.hidden'), padding: 60 } }, { duration: 300 }));
 $('#btn-clear-log').addEventListener('click', () => $('#log').replaceChildren());
@@ -754,10 +1011,17 @@ $('#file-photo').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!f) return;
   try {
-    const res = await fetch('/api/upload', { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: f });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error);
-    const key = addManual('photo', j.value, { label: f.name });
+    const key = addManual('photo', await uploadPhoto(f), { label: f.name });
+    if (key) runModule(key, 'photo_analyze');
+  } catch (err) { log(`Upload failed: ${err.message}`, 'err'); }
+});
+$('#file-attach').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f || !attachTo || !node(attachTo).length) return;
+  try {
+    const owner = node(attachTo).data('display');
+    const key = linkTo(attachTo, { type: 'photo', value: await uploadPhoto(f), label: `${owner} (${f.name})` }, 'photo');
     if (key) runModule(key, 'photo_analyze');
   } catch (err) { log(`Upload failed: ${err.message}`, 'err'); }
 });
@@ -780,11 +1044,14 @@ $('#btn-settings').addEventListener('click', async () => {
   const s = await api('/api/settings');
   $('#set-github').value = '';
   $('#set-github-state').textContent = s.githubToken ? 'A token is saved. Enter a new one to replace it.' : 'No token saved.';
+  $('#set-news-sites').value = s.newsSites || '';
+  $('#set-news-region').value = s.newsRegion || '';
   $('#dlg-settings').showModal();
 });
 $('#dlg-settings').addEventListener('close', async (e) => {
-  const v = $('#set-github').value.trim();
-  if (e.target.returnValue === 'ok' && v) { await api('/api/settings', { method: 'PUT', body: { githubToken: v } }); log('Settings saved.'); }
+  if (e.target.returnValue !== 'ok') return;
+  await api('/api/settings', { method: 'PUT', body: { githubToken: $('#set-github').value.trim(), newsSites: $('#set-news-sites').value, newsRegion: $('#set-news-region').value || 'US:en' } });
+  log('Settings saved.');
 });
 
 $('#link-demo').addEventListener('click', async (e) => {
